@@ -1,0 +1,78 @@
+[
+  {
+    "id": "tf_demo_1",
+    "yieldType": "both",
+    "fishes": [
+      {
+        "name": "黃金神龍魚",
+        "icon": "👑",
+        "rewardTreasure": "黃金神龍魚寶石"
+      }
+    ],
+    "materials": [
+      {
+        "id": "m_1",
+        "name": "材料魚 1",
+        "treasure": "材料魚 1寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_2",
+        "name": "材料魚 2",
+        "treasure": "材料魚 2寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_3",
+        "name": "材料魚 3",
+        "treasure": "材料魚 3寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_4",
+        "name": "材料魚 4",
+        "treasure": "材料魚 4寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_5",
+        "name": "材料魚 5",
+        "treasure": "材料魚 5寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_6",
+        "name": "材料魚 6",
+        "treasure": "材料魚 6寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_7",
+        "name": "材料魚 7",
+        "treasure": "材料魚 7寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_8",
+        "name": "材料魚 8",
+        "treasure": "材料魚 8寶石",
+        "qty": 25,
+        "icon": "🐟"
+      },
+      {
+        "id": "m_9",
+        "name": "材料魚 9",
+        "treasure": "材料魚 9寶石",
+        "qty": 25,
+        "icon": "🐟"
+      }
+    ]
+  }
+]
