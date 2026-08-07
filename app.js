@@ -941,49 +941,36 @@ function openFormModal(tfId = null) {
         });
     });
 
-    const presetOptionsHTML = availableFishPresets.length === 0
-        ? `<option value="">(無現有魚可選)</option>`
-        : `<option value="">-- 快速帶入現有魚類 --</option>` + availableFishPresets.map((p, idx) => 
-            `<option value="${idx}">${p.name} (寶物: ${p.treasure})</option>`
-        ).join("");
-
-    // Populate Fish 1 and Fish 2 dropdowns
-    const tf1PresetSelect = document.getElementById("tf1-preset-select");
-    const tf2PresetSelect = document.getElementById("tf2-preset-select");
-
-    if (tf1PresetSelect) {
-        tf1PresetSelect.innerHTML = presetOptionsHTML;
-        tf1PresetSelect.onchange = (e) => {
-            const idx = e.target.value;
-            if (idx !== "" && availableFishPresets[idx]) {
-                const preset = availableFishPresets[idx];
-                formNameInput.value = preset.name;
-                formRewardInput.value = preset.treasure;
-                formRewardInput.dataset.autoFilled = "false";
-                currentTfAvatarVal = preset.icon;
-                tfIconEmoji.value = isImageSource(currentTfAvatarVal) ? "" : currentTfAvatarVal;
-                tfIconUrl.value = isImageSource(currentTfAvatarVal) && !currentTfAvatarVal.startsWith("data:") ? currentTfAvatarVal : "";
-                updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
-            }
-        };
+    // Populate global HTML datalist for autocomplete search
+    const datalistEl = document.getElementById("existing-fish-datalist");
+    if (datalistEl) {
+        datalistEl.innerHTML = availableFishPresets.map(p => `<option value="${p.name}">【寶物：${p.treasure}】</option>`).join("");
     }
 
-    if (tf2PresetSelect) {
-        tf2PresetSelect.innerHTML = presetOptionsHTML;
-        tf2PresetSelect.onchange = (e) => {
-            const idx = e.target.value;
-            if (idx !== "" && availableFishPresets[idx]) {
-                const preset = availableFishPresets[idx];
-                formName2Input.value = preset.name;
-                formReward2Input.value = preset.treasure;
-                formReward2Input.dataset.autoFilled = "false";
-                currentTf2AvatarVal = preset.icon;
-                tf2IconEmoji.value = isImageSource(currentTf2AvatarVal) ? "" : currentTf2AvatarVal;
-                tf2IconUrl.value = isImageSource(currentTf2AvatarVal) && !currentTf2AvatarVal.startsWith("data:") ? currentTf2AvatarVal : "";
-                updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
-            }
-        };
-    }
+    // Attach list attribute to main and secondary fish name inputs
+    formNameInput.setAttribute("list", "existing-fish-datalist");
+    formName2Input.setAttribute("list", "existing-fish-datalist");
+
+    const handleNameAutocomplete = (inputEl, rewardEl, avatarValSetter, avatarPreviewEl, emojiInputEl, urlInputEl) => {
+        const val = inputEl.value.trim();
+        const matched = availableFishPresets.find(p => p.name.toLowerCase() === val.toLowerCase());
+        if (matched) {
+            rewardEl.value = matched.treasure;
+            rewardEl.dataset.autoFilled = "false";
+            avatarValSetter(matched.icon);
+            emojiInputEl.value = isImageSource(matched.icon) ? "" : matched.icon;
+            urlInputEl.value = isImageSource(matched.icon) && !matched.icon.startsWith("data:") ? matched.icon : "";
+            updateAvatarPreview(avatarPreviewEl, matched.icon);
+        }
+    };
+
+    formNameInput.addEventListener("change", () => {
+        handleNameAutocomplete(formNameInput, formRewardInput, (val) => { currentTfAvatarVal = val; }, tfAvatarPreview, tfIconEmoji, tfIconUrl);
+    });
+
+    formName2Input.addEventListener("change", () => {
+        handleNameAutocomplete(formName2Input, formReward2Input, (val) => { currentTf2AvatarVal = val; }, tf2AvatarPreview, tf2IconEmoji, tf2IconUrl);
+    });
 
     for (let i = 0; i < 9; i++) {
         const matData = existingData && existingData.materials[i] ? existingData.materials[i] : {
@@ -1008,7 +995,7 @@ function openFormModal(tfId = null) {
                 <input type="file" class="mat-file-in" id="mat-file-input-${i}" accept="image/*" style="display:none;">
                 <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('mat-file-input-${i}').click()">📷 上傳</button>
             </div>
-            <input type="text" class="mat-name-in" id="mat-name-input-${i}" placeholder="材料魚名稱 (含「免費禮物」則不列入分析) *" value="${matData.name}" required>
+            <input type="text" class="mat-name-in" id="mat-name-input-${i}" list="existing-fish-datalist" placeholder="輸入關鍵字自動推薦現有魚 *" value="${matData.name}" required>
             <input type="text" class="mat-treasure-in" id="mat-treasure-input-${i}" placeholder="材料魚寶物名稱 (未輸入自動帶入 魚名+寶石)" value="${matData.treasure}">
             <div style="display:flex; align-items:center; justify-content:space-between;">
                 <span style="font-size:0.75rem; color:var(--text-muted);">需求數量:</span>
@@ -1036,6 +1023,19 @@ function openFormModal(tfId = null) {
                 updateAvatarPreview(prevDiv, preset.icon);
             }
         });
+
+        const checkAndAutoFillMat = () => {
+            const val = nameInput.value.trim();
+            const matched = availableFishPresets.find(p => p.name.toLowerCase() === val.toLowerCase());
+            if (matched) {
+                treasureInput.value = matched.treasure;
+                treasureInput.dataset.autoFilled = "false";
+                iconInput.value = matched.icon;
+                updateAvatarPreview(prevDiv, matched.icon);
+            }
+        };
+
+        nameInput.addEventListener("change", checkAndAutoFillMat);
 
         nameInput.addEventListener("input", (e) => {
             const fishName = e.target.value.trim();
