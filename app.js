@@ -941,10 +941,54 @@ function openFormModal(tfId = null) {
         });
     });
 
+    const presetOptionsHTML = availableFishPresets.length === 0
+        ? `<option value="">(無現有魚可選)</option>`
+        : `<option value="">-- 快速帶入現有魚類 --</option>` + availableFishPresets.map((p, idx) => 
+            `<option value="${idx}">${p.name} (寶物: ${p.treasure})</option>`
+        ).join("");
+
     // Populate global HTML datalist for autocomplete search
     const datalistEl = document.getElementById("existing-fish-datalist");
     if (datalistEl) {
         datalistEl.innerHTML = availableFishPresets.map(p => `<option value="${p.name}">【寶物：${p.treasure}】</option>`).join("");
+    }
+
+    // Populate Fish 1 and Fish 2 dropdowns
+    const tf1PresetSelect = document.getElementById("tf1-preset-select");
+    const tf2PresetSelect = document.getElementById("tf2-preset-select");
+
+    if (tf1PresetSelect) {
+        tf1PresetSelect.innerHTML = presetOptionsHTML;
+        tf1PresetSelect.onchange = (e) => {
+            const idx = e.target.value;
+            if (idx !== "" && availableFishPresets[idx]) {
+                const preset = availableFishPresets[idx];
+                formNameInput.value = preset.name;
+                formRewardInput.value = preset.treasure;
+                formRewardInput.dataset.autoFilled = "false";
+                currentTfAvatarVal = preset.icon;
+                tfIconEmoji.value = isImageSource(currentTfAvatarVal) ? "" : currentTfAvatarVal;
+                tfIconUrl.value = isImageSource(currentTfAvatarVal) && !currentTfAvatarVal.startsWith("data:") ? currentTfAvatarVal : "";
+                updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
+            }
+        };
+    }
+
+    if (tf2PresetSelect) {
+        tf2PresetSelect.innerHTML = presetOptionsHTML;
+        tf2PresetSelect.onchange = (e) => {
+            const idx = e.target.value;
+            if (idx !== "" && availableFishPresets[idx]) {
+                const preset = availableFishPresets[idx];
+                formName2Input.value = preset.name;
+                formReward2Input.value = preset.treasure;
+                formReward2Input.dataset.autoFilled = "false";
+                currentTf2AvatarVal = preset.icon;
+                tf2IconEmoji.value = isImageSource(currentTf2AvatarVal) ? "" : currentTf2AvatarVal;
+                tf2IconUrl.value = isImageSource(currentTf2AvatarVal) && !currentTf2AvatarVal.startsWith("data:") ? currentTf2AvatarVal : "";
+                updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
+            }
+        };
     }
 
     // Attach list attribute to main and secondary fish name inputs
@@ -964,13 +1008,13 @@ function openFormModal(tfId = null) {
         }
     };
 
-    formNameInput.addEventListener("change", () => {
+    formNameInput.onchange = () => {
         handleNameAutocomplete(formNameInput, formRewardInput, (val) => { currentTfAvatarVal = val; }, tfAvatarPreview, tfIconEmoji, tfIconUrl);
-    });
+    };
 
-    formName2Input.addEventListener("change", () => {
+    formName2Input.onchange = () => {
         handleNameAutocomplete(formName2Input, formReward2Input, (val) => { currentTf2AvatarVal = val; }, tf2AvatarPreview, tf2IconEmoji, tf2IconUrl);
-    });
+    };
 
     for (let i = 0; i < 9; i++) {
         const matData = existingData && existingData.materials[i] ? existingData.materials[i] : {
