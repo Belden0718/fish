@@ -914,64 +914,6 @@ function openFormModal(tfId = null) {
     tf2IconUrl.value = isImageSource(currentTf2AvatarVal) && !currentTf2AvatarVal.startsWith("data:") ? currentTf2AvatarVal : "";
     updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
 
-    // Gather all unique fishes/materials created so far for quick selection
-    const availableFishPresets = [];
-    const seenNames = new Set();
-
-    treasureFishList.forEach(tf => {
-        tf.fishes.forEach(f => {
-            if (f.name && !seenNames.has(f.name)) {
-                seenNames.add(f.name);
-                availableFishPresets.push({
-                    name: f.name,
-                    treasure: f.rewardTreasure || `${f.name}寶石`,
-                    icon: f.icon || "👑"
-                });
-            }
-        });
-        tf.materials.forEach(m => {
-            if (m.name && !seenNames.has(m.name)) {
-                seenNames.add(m.name);
-                availableFishPresets.push({
-                    name: m.name,
-                    treasure: m.treasure || `${m.name}寶石`,
-                    icon: m.icon || "🐟"
-                });
-            }
-        });
-    });
-
-    // Populate global HTML datalist for autocomplete search
-    const datalistEl = document.getElementById("existing-fish-datalist");
-    if (datalistEl) {
-        datalistEl.innerHTML = availableFishPresets.map(p => `<option value="${p.name}">【寶物：${p.treasure}】</option>`).join("");
-    }
-
-    // Attach list attribute to main and secondary fish name inputs
-    formNameInput.setAttribute("list", "existing-fish-datalist");
-    formName2Input.setAttribute("list", "existing-fish-datalist");
-
-    const handleNameAutocomplete = (inputEl, rewardEl, avatarValSetter, avatarPreviewEl, emojiInputEl, urlInputEl) => {
-        const val = inputEl.value.trim();
-        const matched = availableFishPresets.find(p => p.name.toLowerCase() === val.toLowerCase());
-        if (matched) {
-            rewardEl.value = matched.treasure;
-            rewardEl.dataset.autoFilled = "false";
-            avatarValSetter(matched.icon);
-            emojiInputEl.value = isImageSource(matched.icon) ? "" : matched.icon;
-            urlInputEl.value = isImageSource(matched.icon) && !matched.icon.startsWith("data:") ? matched.icon : "";
-            updateAvatarPreview(avatarPreviewEl, matched.icon);
-        }
-    };
-
-    formNameInput.oninput = () => {
-        handleNameAutocomplete(formNameInput, formRewardInput, (val) => { currentTfAvatarVal = val; }, tfAvatarPreview, tfIconEmoji, tfIconUrl);
-    };
-
-    formName2Input.oninput = () => {
-        handleNameAutocomplete(formName2Input, formReward2Input, (val) => { currentTf2AvatarVal = val; }, tf2AvatarPreview, tf2IconEmoji, tf2IconUrl);
-    };
-
     for (let i = 0; i < 9; i++) {
         const matData = existingData && existingData.materials[i] ? existingData.materials[i] : {
             name: `材料魚 ${i + 1}`,
@@ -990,7 +932,7 @@ function openFormModal(tfId = null) {
                 <input type="file" class="mat-file-in" id="mat-file-input-${i}" accept="image/*" style="display:none;">
                 <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('mat-file-input-${i}').click()">📷 上傳</button>
             </div>
-            <input type="text" class="mat-name-in" id="mat-name-input-${i}" list="existing-fish-datalist" placeholder="輸入關鍵字比對現有魚 *" value="${matData.name}" required>
+            <input type="text" class="mat-name-in" id="mat-name-input-${i}" placeholder="材料魚名稱 (含「免費禮物」則不列入分析) *" value="${matData.name}" required>
             <input type="text" class="mat-treasure-in" id="mat-treasure-input-${i}" placeholder="材料魚寶物名稱 (未輸入自動帶入 魚名+寶石)" value="${matData.treasure}">
             <div style="display:flex; align-items:center; justify-content:space-between;">
                 <span style="font-size:0.75rem; color:var(--text-muted);">需求數量:</span>
@@ -1006,18 +948,60 @@ function openFormModal(tfId = null) {
         const nameInput = matCard.querySelector(`#mat-name-input-${i}`);
         const treasureInput = matCard.querySelector(`#mat-treasure-input-${i}`);
 
-        const checkAndAutoFillMat = () => {
-            const val = nameInput.value.trim();
-            const matched = availableFishPresets.find(p => p.name.toLowerCase() === val.toLowerCase());
-            if (matched) {
-                treasureInput.value = matched.treasure;
-                treasureInput.dataset.autoFilled = "false";
-                iconInput.value = matched.icon;
-                updateAvatarPreview(prevDiv, matched.icon);
-            }
-        };
+        // Autocomplete Popup Container
+        const popupDiv = document.createElement("div");
+        popupDiv.className = "mat-suggestions-popup";
+        popupDiv.id = `mat-suggestions-${i}`;
+        matCard.appendChild(popupDiv);
 
-        nameInput.addEventListener("input", checkAndAutoFillMat);
+        function hidePopup() {
+            popupDiv.classList.remove("active");
+            popupDiv.innerHTML = "";
+        }
+
+        function showSuggestions(query) {
+            const trimmed = query.toLowerCase().trim();
+            if (!trimmed) {
+                hidePopup();
+                return;
+            }
+
+            const existingFishes = getAllExistingFishOptions();
+            const matches = existingFishes.filter(item => item.name.toLowerCase().includes(trimmed));
+
+            if (matches.length === 0) {
+                hidePopup();
+                return;
+            }
+
+            popupDiv.innerHTML = matches.map(item => `
+                <div class="suggestion-item" data-name="${item.name}" data-treasure="${item.treasure}" data-icon="${encodeURIComponent(item.icon)}">
+                    <div class="suggestion-avatar">${renderAvatarHTML(item.icon, '🐟')}</div>
+                    <div class="suggestion-info">
+                        <span class="suggestion-name">${item.name}</span>
+                        <span class="suggestion-treasure">💎 ${item.treasure}</span>
+                    </div>
+                </div>
+            `).join("");
+
+            popupDiv.querySelectorAll(".suggestion-item").forEach(itemEl => {
+                itemEl.addEventListener("mousedown", (evt) => {
+                    evt.preventDefault(); // prevent blur before click
+                    const name = itemEl.dataset.name;
+                    const treasure = itemEl.dataset.treasure;
+                    const icon = decodeURIComponent(itemEl.dataset.icon);
+
+                    nameInput.value = name;
+                    treasureInput.value = treasure;
+                    treasureInput.dataset.autoFilled = "false";
+                    iconInput.value = icon;
+                    updateAvatarPreview(prevDiv, icon);
+                    hidePopup();
+                });
+            });
+
+            popupDiv.classList.add("active");
+        }
 
         nameInput.addEventListener("input", (e) => {
             const fishName = e.target.value.trim();
@@ -1030,6 +1014,15 @@ function openFormModal(tfId = null) {
                     treasureInput.dataset.autoFilled = "false";
                 }
             }
+            showSuggestions(e.target.value);
+        });
+
+        nameInput.addEventListener("focus", (e) => {
+            showSuggestions(e.target.value);
+        });
+
+        nameInput.addEventListener("blur", () => {
+            setTimeout(hidePopup, 200);
         });
 
         treasureInput.addEventListener("input", () => {
@@ -1055,6 +1048,37 @@ function openFormModal(tfId = null) {
     }
 
     modalForm.classList.add("active");
+}
+
+function getAllExistingFishOptions() {
+    const map = new Map();
+
+    treasureFishList.forEach(tf => {
+        if (tf.fishes && Array.isArray(tf.fishes)) {
+            tf.fishes.forEach(f => {
+                if (f && f.name && !map.has(f.name)) {
+                    map.set(f.name, {
+                        name: f.name,
+                        treasure: f.rewardTreasure || `${f.name}寶石`,
+                        icon: f.icon || "👑"
+                    });
+                }
+            });
+        }
+        if (tf.materials && Array.isArray(tf.materials)) {
+            tf.materials.forEach(m => {
+                if (m && m.name && !map.has(m.name)) {
+                    map.set(m.name, {
+                        name: m.name,
+                        treasure: m.treasure || `${m.name}寶石`,
+                        icon: m.icon || "🐟"
+                    });
+                }
+            });
+        }
+    });
+
+    return Array.from(map.values());
 }
 
 function closeFormModal() {
