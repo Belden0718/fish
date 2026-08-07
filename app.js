@@ -121,7 +121,7 @@ function setupFirebaseSync() {
         } else if (data && typeof data === 'object') {
             treasureFishList = Object.values(data);
         } else {
-            // First time initialization: Seed with local backup or data.json
+            // First time initialization: Seed from static data.json file if available
             seedInitialDataFromLocal();
             return;
         }
@@ -137,12 +137,12 @@ function setupFirebaseSync() {
 
 async function seedInitialDataFromLocal() {
     try {
-        const res = await fetch('/api/data');
+        const res = await fetch('/data.json');
         if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
                 treasureFishList = data;
-                saveData(); // Push initial seed to Firebase
+                saveData(); // Push initial seed to Firebase Cloud
                 return;
             }
         }
@@ -150,7 +150,7 @@ async function seedInitialDataFromLocal() {
 
     loadFromLocalStorageFallback();
     if (treasureFishList.length > 0) {
-        saveData(); // Push local storage data to Firebase
+        saveData(); // Push local storage data to Firebase Cloud
     } else {
         render();
     }
