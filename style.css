@@ -153,6 +153,10 @@ body {
 .segment-btn {
     width: 100%; text-align: left; padding: 10px 12px; border: none; background: transparent;
     color: var(--text-muted); font-size: 0.85rem; cursor: pointer; border-radius: 6px; transition: var(--transition);
+    display: flex; align-items: center; gap: 8px;
+}
+.segment-btn .nav-btn-img {
+    width: 20px; height: 20px; object-fit: contain; flex-shrink: 0;
 }
 .segment-btn.active { background: rgba(255, 255, 255, 0.15); color: var(--text-main); font-weight: 600; }
 
