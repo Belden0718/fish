@@ -959,9 +959,13 @@ function addMaterialFormRow(matData = null) {
 
     const matCard = document.createElement("div");
     matCard.className = "mat-input-card";
+    matCard.setAttribute("draggable", "true");
     matCard.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <div class="mat-num-badge">材料魚 #${index + 1}</div>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span class="mat-drag-handle" title="按住拖曳調整順序">⣿</span>
+                <div class="mat-num-badge">材料魚 #${index + 1}</div>
+            </div>
             <button type="button" class="btn btn-sm btn-danger btn-del-mat" title="刪除此材料魚" style="padding: 1px 6px; font-size: 0.75rem;">✕ 刪除</button>
         </div>
         <div class="mat-avatar-row">
@@ -1090,6 +1094,60 @@ function addMaterialFormRow(matData = null) {
                 console.error("Material avatar compression failed", err);
             }
         }
+    });
+
+    // Drag and Drop reordering logic
+    matCard.addEventListener("dragstart", (e) => {
+        // Only allow dragging if target is handle or inside header, not when typing in input
+        if (["INPUT", "BUTTON", "LABEL"].includes(document.activeElement?.tagName)) {
+            e.preventDefault();
+            return;
+        }
+        matCard.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", ""); // required for Firefox
+    });
+
+    matCard.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const draggingCard = materialsFormContainer.querySelector(".dragging");
+        if (draggingCard && draggingCard !== matCard) {
+            matCard.classList.add("drag-over");
+        }
+    });
+
+    matCard.addEventListener("dragenter", (e) => {
+        e.preventDefault();
+    });
+
+    matCard.addEventListener("dragleave", () => {
+        matCard.classList.remove("drag-over");
+    });
+
+    matCard.addEventListener("drop", (e) => {
+        e.preventDefault();
+        matCard.classList.remove("drag-over");
+        const draggingCard = materialsFormContainer.querySelector(".dragging");
+        if (draggingCard && draggingCard !== matCard) {
+            const allCards = Array.from(materialsFormContainer.querySelectorAll(".mat-input-card"));
+            const draggingIndex = allCards.indexOf(draggingCard);
+            const targetIndex = allCards.indexOf(matCard);
+
+            if (draggingIndex < targetIndex) {
+                materialsFormContainer.insertBefore(draggingCard, matCard.nextSibling);
+            } else {
+                materialsFormContainer.insertBefore(draggingCard, matCard);
+            }
+            updateMaterialBadges();
+        }
+    });
+
+    matCard.addEventListener("dragend", () => {
+        matCard.classList.remove("dragging");
+        matCard.classList.remove("drag-over");
+        materialsFormContainer.querySelectorAll(".mat-input-card").forEach(c => c.classList.remove("drag-over"));
+        updateMaterialBadges();
     });
 
     updateMaterialBadges();
