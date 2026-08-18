@@ -313,6 +313,9 @@ function setupEventListeners() {
     });
 
     treasureFishForm.addEventListener("submit", handleFormSubmit);
+    document.getElementById("btn-add-material-row").addEventListener("click", () => {
+        addMaterialFormRow();
+    });
 
     document.getElementById("btn-export-data").addEventListener("click", exportData);
     document.getElementById("btn-import-trigger").addEventListener("click", () => {
@@ -687,8 +690,8 @@ function renderCards(list) {
             </div>
 
             <div class="materials-title-bar">
-                <span>需求材料：底下 9 隻材料魚寶物 (獨立不重疊)</span>
-                <span>共 9 種寶物</span>
+                <span>需求材料：底下 ${tf.materials.length} 隻材料魚寶物 (獨立不重疊)</span>
+                <span>共 ${tf.materials.length} 種寶物</span>
             </div>
 
             <div class="materials-grid-3x3">
@@ -878,7 +881,7 @@ function openFormModal(tfId = null) {
     }
 
     if (existingData) {
-        titleEl.textContent = "編輯寶物魚配方與 9 隻材料魚";
+        titleEl.textContent = `編輯寶物魚配方與材料魚 (共 ${existingData.materials ? existingData.materials.length : 9} 隻)`;
         document.getElementById("form-id").value = existingData.id;
 
         const yieldType = existingData.yieldType || "both";
@@ -896,7 +899,7 @@ function openFormModal(tfId = null) {
         formReward2Input.dataset.autoFilled = "false";
         currentTf2AvatarVal = fish2.icon || "🐟";
     } else {
-        titleEl.textContent = "新增寶物魚配方 (設定 9 隻獨立材料魚)";
+        titleEl.textContent = "新增寶物魚配方";
         treasureFishForm.reset();
         document.getElementById("form-id").value = "";
         document.querySelector(`input[name="yield-type"][value="both"]`).checked = true;
@@ -914,140 +917,182 @@ function openFormModal(tfId = null) {
     tf2IconUrl.value = isImageSource(currentTf2AvatarVal) && !currentTf2AvatarVal.startsWith("data:") ? currentTf2AvatarVal : "";
     updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
 
-    for (let i = 0; i < 9; i++) {
-        const matData = existingData && existingData.materials[i] ? existingData.materials[i] : {
+    const materialsToLoad = (existingData && existingData.materials && existingData.materials.length > 0) 
+        ? existingData.materials 
+        : Array.from({ length: 9 }, (_, i) => ({
             name: `材料魚 ${i + 1}`,
             treasure: `材料魚 ${i + 1}寶石`,
             qty: 25,
             icon: "🐟"
-        };
+        }));
 
-        const matCard = document.createElement("div");
-        matCard.className = "mat-input-card";
-        matCard.innerHTML = `
-            <div class="mat-num-badge">材料魚 #${i + 1}</div>
-            <div class="mat-avatar-row">
-                <div class="mat-avatar-prev" id="mat-prev-${i}">${renderAvatarHTML(matData.icon, '🐟')}</div>
-                <input type="text" class="mat-icon-in" id="mat-icon-input-${i}" placeholder="Emoji 或 圖片網址" value="${matData.icon || '🐟'}" style="flex:1;">
-                <input type="file" class="mat-file-in" id="mat-file-input-${i}" accept="image/*" style="display:none;">
-                <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('mat-file-input-${i}').click()">📷 上傳</button>
-            </div>
-            <input type="text" class="mat-name-in" id="mat-name-input-${i}" placeholder="材料魚名稱 (含「免費禮物」則不列入分析) *" value="${matData.name}" required>
-            <input type="text" class="mat-treasure-in" id="mat-treasure-input-${i}" placeholder="材料魚寶物名稱 (未輸入自動帶入 魚名+寶石)" value="${matData.treasure}">
-            <div style="display:flex; align-items:center; justify-content:space-between;">
-                <span style="font-size:0.75rem; color:var(--text-muted);">需求數量:</span>
-                <input type="number" class="mat-qty-in" min="1" max="999" value="${matData.qty}" style="width:70px; text-align:center;" required>
-            </div>
-        `;
-
-        materialsFormContainer.appendChild(matCard);
-
-        const iconInput = matCard.querySelector(`#mat-icon-input-${i}`);
-        const fileInput = matCard.querySelector(`#mat-file-input-${i}`);
-        const prevDiv = matCard.querySelector(`#mat-prev-${i}`);
-        const nameInput = matCard.querySelector(`#mat-name-input-${i}`);
-        const treasureInput = matCard.querySelector(`#mat-treasure-input-${i}`);
-
-        // Autocomplete Popup Container
-        const popupDiv = document.createElement("div");
-        popupDiv.className = "mat-suggestions-popup";
-        popupDiv.id = `mat-suggestions-${i}`;
-        matCard.appendChild(popupDiv);
-
-        function hidePopup() {
-            popupDiv.classList.remove("active");
-            popupDiv.innerHTML = "";
-        }
-
-        function showSuggestions(query) {
-            const trimmed = query.toLowerCase().trim();
-            if (!trimmed) {
-                hidePopup();
-                return;
-            }
-
-            const existingFishes = getAllExistingFishOptions();
-            const matches = existingFishes.filter(item => item.name.toLowerCase().includes(trimmed));
-
-            if (matches.length === 0) {
-                hidePopup();
-                return;
-            }
-
-            popupDiv.innerHTML = matches.map(item => `
-                <div class="suggestion-item" data-name="${item.name}" data-treasure="${item.treasure}" data-icon="${encodeURIComponent(item.icon)}">
-                    <div class="suggestion-avatar">${renderAvatarHTML(item.icon, '🐟')}</div>
-                    <div class="suggestion-info">
-                        <span class="suggestion-name">${item.name}</span>
-                        <span class="suggestion-treasure">💎 ${item.treasure}</span>
-                    </div>
-                </div>
-            `).join("");
-
-            popupDiv.querySelectorAll(".suggestion-item").forEach(itemEl => {
-                itemEl.addEventListener("mousedown", (evt) => {
-                    evt.preventDefault(); // prevent blur before click
-                    const name = itemEl.dataset.name;
-                    const treasure = itemEl.dataset.treasure;
-                    const icon = decodeURIComponent(itemEl.dataset.icon);
-
-                    nameInput.value = name;
-                    treasureInput.value = treasure;
-                    treasureInput.dataset.autoFilled = "false";
-                    iconInput.value = icon;
-                    updateAvatarPreview(prevDiv, icon);
-                    hidePopup();
-                });
-            });
-
-            popupDiv.classList.add("active");
-        }
-
-        nameInput.addEventListener("input", (e) => {
-            const fishName = e.target.value.trim();
-            if (!treasureInput.value.trim() || treasureInput.dataset.autoFilled === "true") {
-                if (fishName) {
-                    treasureInput.value = `${fishName}寶石`;
-                    treasureInput.dataset.autoFilled = "true";
-                } else {
-                    treasureInput.value = "";
-                    treasureInput.dataset.autoFilled = "false";
-                }
-            }
-            showSuggestions(e.target.value);
-        });
-
-        nameInput.addEventListener("focus", (e) => {
-            showSuggestions(e.target.value);
-        });
-
-        nameInput.addEventListener("blur", () => {
-            setTimeout(hidePopup, 200);
-        });
-
-        treasureInput.addEventListener("input", () => {
-            treasureInput.dataset.autoFilled = "false";
-        });
-
-        iconInput.addEventListener("input", (e) => {
-            updateAvatarPreview(prevDiv, e.target.value);
-        });
-
-        fileInput.addEventListener("change", async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                try {
-                    const compressedDataUrl = await compressImageFile(file, 150, 150);
-                    iconInput.value = compressedDataUrl;
-                    updateAvatarPreview(prevDiv, compressedDataUrl);
-                } catch (err) {
-                    console.error("Material avatar compression failed", err);
-                }
-            }
-        });
-    }
+    materialsToLoad.forEach(matData => addMaterialFormRow(matData));
 
     modalForm.classList.add("active");
+}
+
+function updateMaterialBadges() {
+    const cards = materialsFormContainer.querySelectorAll(".mat-input-card");
+    cards.forEach((card, index) => {
+        const badge = card.querySelector(".mat-num-badge");
+        if (badge) {
+            badge.textContent = `材料魚 #${index + 1}`;
+        }
+        const delBtn = card.querySelector(".btn-del-mat");
+        if (delBtn) {
+            delBtn.style.display = cards.length > 1 ? "inline-block" : "none";
+        }
+    });
+}
+
+function addMaterialFormRow(matData = null) {
+    const currentCount = materialsFormContainer.querySelectorAll(".mat-input-card").length;
+    const index = currentCount;
+    if (!matData) {
+        matData = {
+            name: `材料魚 ${index + 1}`,
+            treasure: `材料魚 ${index + 1}寶石`,
+            qty: 25,
+            icon: "🐟"
+        };
+    }
+
+    const matCard = document.createElement("div");
+    matCard.className = "mat-input-card";
+    matCard.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div class="mat-num-badge">材料魚 #${index + 1}</div>
+            <button type="button" class="btn btn-sm btn-danger btn-del-mat" title="刪除此材料魚" style="padding: 1px 6px; font-size: 0.75rem;">✕ 刪除</button>
+        </div>
+        <div class="mat-avatar-row">
+            <div class="mat-avatar-prev" id="mat-prev-${Date.now()}-${index}">${renderAvatarHTML(matData.icon, '🐟')}</div>
+            <input type="text" class="mat-icon-in" placeholder="Emoji 或 圖片網址" value="${matData.icon || '🐟'}" style="flex:1;">
+            <input type="file" class="mat-file-in" accept="image/*" style="display:none;">
+            <button type="button" class="btn btn-sm btn-secondary btn-upload-trigger">📷 上傳</button>
+        </div>
+        <input type="text" class="mat-name-in" placeholder="材料魚名稱 (含「免費禮物」則不列入分析) *" value="${matData.name}" required>
+        <input type="text" class="mat-treasure-in" placeholder="材料魚寶物名稱 (未輸入自動帶入 魚名+寶石)" value="${matData.treasure}">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:0.75rem; color:var(--text-muted);">需求數量:</span>
+            <input type="number" class="mat-qty-in" min="1" max="999" value="${matData.qty}" style="width:70px; text-align:center;" required>
+        </div>
+    `;
+
+    materialsFormContainer.appendChild(matCard);
+
+    const iconInput = matCard.querySelector(".mat-icon-in");
+    const fileInput = matCard.querySelector(".mat-file-in");
+    const uploadBtn = matCard.querySelector(".btn-upload-trigger");
+    const prevDiv = matCard.querySelector(".mat-avatar-prev");
+    const nameInput = matCard.querySelector(".mat-name-in");
+    const treasureInput = matCard.querySelector(".mat-treasure-in");
+    const delBtn = matCard.querySelector(".btn-del-mat");
+
+    uploadBtn.addEventListener("click", () => fileInput.click());
+
+    delBtn.addEventListener("click", () => {
+        matCard.remove();
+        updateMaterialBadges();
+    });
+
+    // Autocomplete Popup Container
+    const popupDiv = document.createElement("div");
+    popupDiv.className = "mat-suggestions-popup";
+    matCard.appendChild(popupDiv);
+
+    function hidePopup() {
+        popupDiv.classList.remove("active");
+        popupDiv.innerHTML = "";
+    }
+
+    function showSuggestions(query) {
+        const trimmed = query.toLowerCase().trim();
+        if (!trimmed) {
+            hidePopup();
+            return;
+        }
+
+        const existingFishes = getAllExistingFishOptions();
+        const matches = existingFishes.filter(item => item.name.toLowerCase().includes(trimmed));
+
+        if (matches.length === 0) {
+            hidePopup();
+            return;
+        }
+
+        popupDiv.innerHTML = matches.map(item => `
+            <div class="suggestion-item" data-name="${item.name}" data-treasure="${item.treasure}" data-icon="${encodeURIComponent(item.icon)}">
+                <div class="suggestion-avatar">${renderAvatarHTML(item.icon, '🐟')}</div>
+                <div class="suggestion-info">
+                    <span class="suggestion-name">${item.name}</span>
+                    <span class="suggestion-treasure">💎 ${item.treasure}</span>
+                </div>
+            </div>
+        `).join("");
+
+        popupDiv.querySelectorAll(".suggestion-item").forEach(itemEl => {
+            itemEl.addEventListener("mousedown", (evt) => {
+                evt.preventDefault();
+                const name = itemEl.dataset.name;
+                const treasure = itemEl.dataset.treasure;
+                const icon = decodeURIComponent(itemEl.dataset.icon);
+
+                nameInput.value = name;
+                treasureInput.value = treasure;
+                treasureInput.dataset.autoFilled = "false";
+                iconInput.value = icon;
+                updateAvatarPreview(prevDiv, icon);
+                hidePopup();
+            });
+        });
+
+        popupDiv.classList.add("active");
+    }
+
+    nameInput.addEventListener("input", (e) => {
+        const fishName = e.target.value.trim();
+        if (!treasureInput.value.trim() || treasureInput.dataset.autoFilled === "true") {
+            if (fishName) {
+                treasureInput.value = `${fishName}寶石`;
+                treasureInput.dataset.autoFilled = "true";
+            } else {
+                treasureInput.value = "";
+                treasureInput.dataset.autoFilled = "false";
+            }
+        }
+        showSuggestions(e.target.value);
+    });
+
+    nameInput.addEventListener("focus", (e) => {
+        showSuggestions(e.target.value);
+    });
+
+    nameInput.addEventListener("blur", () => {
+        setTimeout(hidePopup, 200);
+    });
+
+    treasureInput.addEventListener("input", () => {
+        treasureInput.dataset.autoFilled = "false";
+    });
+
+    iconInput.addEventListener("input", (e) => {
+        updateAvatarPreview(prevDiv, e.target.value);
+    });
+
+    fileInput.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            try {
+                const compressedDataUrl = await compressImageFile(file, 150, 150);
+                iconInput.value = compressedDataUrl;
+                updateAvatarPreview(prevDiv, compressedDataUrl);
+            } catch (err) {
+                console.error("Material avatar compression failed", err);
+            }
+        }
+    });
+
+    updateMaterialBadges();
 }
 
 function getAllExistingFishOptions() {
