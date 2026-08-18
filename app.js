@@ -204,6 +204,7 @@ function setupEventListeners() {
     document.getElementById("view-mode-table").addEventListener("click", () => setViewMode("table"));
 
     document.getElementById("btn-add-treasure-fish").addEventListener("click", () => openFormModal());
+    document.getElementById("fab-add-fish").addEventListener("click", () => openFormModal());
 
     // Auto-fill Fish 1 Reward
     formNameInput.addEventListener("input", (e) => {
