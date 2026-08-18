@@ -79,6 +79,7 @@ const gridCount = document.getElementById("grid-count");
 // Modal Elements
 const modalForm = document.getElementById("modal-form");
 const treasureFishForm = document.getElementById("treasure-fish-form");
+const targetFishFormContainer = document.getElementById("target-fish-form-container");
 const materialsFormContainer = document.getElementById("materials-form-container");
 
 // Fish 1 Inputs
@@ -226,38 +227,8 @@ function setupEventListeners() {
         handleScroll(); // initial check
     }
 
-    // Auto-fill Fish 1 Reward
-    formNameInput.addEventListener("input", (e) => {
-        const fishName = e.target.value.trim();
-        if (!formRewardInput.value.trim() || formRewardInput.dataset.autoFilled === "true") {
-            if (fishName) {
-                formRewardInput.value = `${fishName}寶石`;
-                formRewardInput.dataset.autoFilled = "true";
-            } else {
-                formRewardInput.value = "";
-                formRewardInput.dataset.autoFilled = "false";
-            }
-        }
-    });
-    formRewardInput.addEventListener("input", () => {
-        formRewardInput.dataset.autoFilled = "false";
-    });
-
-    // Auto-fill Fish 2 Reward
-    formName2Input.addEventListener("input", (e) => {
-        const fishName = e.target.value.trim();
-        if (!formReward2Input.value.trim() || formReward2Input.dataset.autoFilled === "true") {
-            if (fishName) {
-                formReward2Input.value = `${fishName}寶石`;
-                formReward2Input.dataset.autoFilled = "true";
-            } else {
-                formReward2Input.value = "";
-                formReward2Input.dataset.autoFilled = "false";
-            }
-        }
-    });
-    formReward2Input.addEventListener("input", () => {
-        formReward2Input.dataset.autoFilled = "false";
+    document.getElementById("btn-add-target-fish-row")?.addEventListener("click", () => {
+        addTargetFishFormCard();
     });
 
     // Reorder Modal Triggers
@@ -272,66 +243,6 @@ function setupEventListeners() {
 
     document.getElementById("modal-form-close").addEventListener("click", closeFormModal);
     document.getElementById("btn-cancel-form").addEventListener("click", closeFormModal);
-
-    // Form Avatar 1 Type Switches
-    document.querySelectorAll("input[name='tf-avatar-type']").forEach(radio => {
-        radio.addEventListener("change", (e) => {
-            const type = e.target.value;
-            tfIconEmoji.style.display = type === "emoji" ? "block" : "none";
-            tfFileUpload.style.display = type === "upload" ? "block" : "none";
-            tfIconUrl.style.display = type === "url" ? "block" : "none";
-        });
-    });
-
-    tfIconEmoji.addEventListener("input", (e) => {
-        currentTfAvatarVal = e.target.value || "👑";
-        updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
-    });
-    tfIconUrl.addEventListener("input", (e) => {
-        currentTfAvatarVal = e.target.value || "👑";
-        updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
-    });
-    tfFileUpload.addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                currentTfAvatarVal = await compressImageFile(file, 250, 250);
-                updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
-            } catch (err) {
-                console.error("Compression failed", err);
-            }
-        }
-    });
-
-    // Form Avatar 2 Type Switches
-    document.querySelectorAll("input[name='tf2-avatar-type']").forEach(radio => {
-        radio.addEventListener("change", (e) => {
-            const type = e.target.value;
-            tf2IconEmoji.style.display = type === "emoji" ? "block" : "none";
-            tf2FileUpload.style.display = type === "upload" ? "block" : "none";
-            tf2IconUrl.style.display = type === "url" ? "block" : "none";
-        });
-    });
-
-    tf2IconEmoji.addEventListener("input", (e) => {
-        currentTf2AvatarVal = e.target.value || "🐟";
-        updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
-    });
-    tf2IconUrl.addEventListener("input", (e) => {
-        currentTf2AvatarVal = e.target.value || "🐟";
-        updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
-    });
-    tf2FileUpload.addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                currentTf2AvatarVal = await compressImageFile(file, 250, 250);
-                updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
-            } catch (err) {
-                console.error("Compression failed", err);
-            }
-        }
-    });
 
     treasureFishForm.addEventListener("submit", handleFormSubmit);
     document.getElementById("btn-add-material-row").addEventListener("click", () => {
@@ -629,9 +540,10 @@ function renderCards(list) {
         const isSearching = currentSearch !== "";
 
         const yieldType = tf.yieldType || "both";
+        const countText = tf.fishes.length > 2 ? ` (共${tf.fishes.length}隻)` : (tf.fishes.length === 2 ? " (二選一)" : "");
         const yieldBadgeHTML = yieldType === "both" 
-            ? `<span class="yield-badge both">🎁 一次得兩隻 (全拿)</span>` 
-            : `<span class="yield-badge random">🎲 隨機獲得其中一隻 (二選一)</span>`;
+            ? `<span class="yield-badge both">🎁 一次得全部寶物魚 (全拿)</span>` 
+            : `<span class="yield-badge random">🎲 隨機獲得其中一隻寶物魚${countText}</span>`;
 
         let fishesContentHTML = "";
 
@@ -647,30 +559,21 @@ function renderCards(list) {
                 </div>
             `;
         } else {
-            const f1 = tf.fishes[0];
-            const f2 = tf.fishes[1];
             const dividerSymbol = (yieldType === "random") ? "or" : "+";
+            const fishesListHTML = tf.fishes.map((f, i) => `
+                <div class="dual-fish-item">
+                    <div class="tf-avatar">${renderAvatarHTML(f.icon, i === 0 ? '👑' : '🐟')}</div>
+                    <div class="tf-title">
+                        <h3>${f.name}</h3>
+                        <div class="tf-reward">✨ 解鎖：【${f.rewardTreasure}】</div>
+                    </div>
+                </div>
+            `).join(`<div class="dual-plus-divider">${dividerSymbol}</div>`);
 
             fishesContentHTML = `
                 <div class="dual-fishes-container">
                     <div class="dual-fishes-row">
-                        <div class="dual-fish-item">
-                            <div class="tf-avatar">${renderAvatarHTML(f1.icon, '👑')}</div>
-                            <div class="tf-title">
-                                <h3>${f1.name}</h3>
-                                <div class="tf-reward">✨ 解鎖：【${f1.rewardTreasure}】</div>
-                            </div>
-                        </div>
-
-                        <div class="dual-plus-divider">${dividerSymbol}</div>
-
-                        <div class="dual-fish-item">
-                            <div class="tf-avatar">${renderAvatarHTML(f2.icon, '🐟')}</div>
-                            <div class="tf-title">
-                                <h3>${f2.name}</h3>
-                                <div class="tf-reward">✨ 解鎖：【${f2.rewardTreasure}】</div>
-                            </div>
-                        </div>
+                        ${fishesListHTML}
                     </div>
                     <div class="yield-badge-wrapper">
                         ${yieldBadgeHTML}
@@ -893,6 +796,7 @@ function renderTable(list) {
 }
 
 function openFormModal(tfId = null) {
+    targetFishFormContainer.innerHTML = "";
     materialsFormContainer.innerHTML = "";
     const titleEl = document.getElementById("form-modal-title");
 
@@ -902,42 +806,26 @@ function openFormModal(tfId = null) {
     }
 
     if (existingData) {
-        titleEl.textContent = `編輯寶物魚配方與材料魚 (共 ${existingData.materials ? existingData.materials.length : 9} 隻)`;
+        titleEl.textContent = `編輯寶物魚配方 (含 ${existingData.fishes ? existingData.fishes.length : 1} 隻目標魚 / ${existingData.materials ? existingData.materials.length : 9} 隻材料魚)`;
         document.getElementById("form-id").value = existingData.id;
 
         const yieldType = existingData.yieldType || "both";
         document.querySelector(`input[name="yield-type"][value="${yieldType}"]`).checked = true;
-
-        const fish1 = existingData.fishes[0] || { name: "", rewardTreasure: "", icon: "👑" };
-        formNameInput.value = fish1.name;
-        formRewardInput.value = fish1.rewardTreasure;
-        formRewardInput.dataset.autoFilled = "false";
-        currentTfAvatarVal = fish1.icon || "👑";
-
-        const fish2 = existingData.fishes[1] || { name: "", rewardTreasure: "", icon: "🐟" };
-        formName2Input.value = fish2.name;
-        formReward2Input.value = fish2.rewardTreasure;
-        formReward2Input.dataset.autoFilled = "false";
-        currentTf2AvatarVal = fish2.icon || "🐟";
     } else {
         titleEl.textContent = "新增寶物魚配方";
         treasureFishForm.reset();
         document.getElementById("form-id").value = "";
         document.querySelector(`input[name="yield-type"][value="both"]`).checked = true;
-        formRewardInput.dataset.autoFilled = "false";
-        formReward2Input.dataset.autoFilled = "false";
-        currentTfAvatarVal = "👑";
-        currentTf2AvatarVal = "🐟";
     }
 
-    tfIconEmoji.value = isImageSource(currentTfAvatarVal) ? "" : currentTfAvatarVal;
-    tfIconUrl.value = isImageSource(currentTfAvatarVal) && !currentTfAvatarVal.startsWith("data:") ? currentTfAvatarVal : "";
-    updateAvatarPreview(tfAvatarPreview, currentTfAvatarVal);
+    // Load Target Fishes
+    const targetFishesToLoad = (existingData && existingData.fishes && existingData.fishes.length > 0)
+        ? existingData.fishes
+        : [{ name: "", rewardTreasure: "", icon: "👑" }];
 
-    tf2IconEmoji.value = isImageSource(currentTf2AvatarVal) ? "" : currentTf2AvatarVal;
-    tf2IconUrl.value = isImageSource(currentTf2AvatarVal) && !currentTf2AvatarVal.startsWith("data:") ? currentTf2AvatarVal : "";
-    updateAvatarPreview(tf2AvatarPreview, currentTf2AvatarVal);
+    targetFishesToLoad.forEach((fishData, i) => addTargetFishFormCard(fishData, i === 0));
 
+    // Load Material Fishes
     const materialsToLoad = (existingData && existingData.materials && existingData.materials.length > 0) 
         ? existingData.materials 
         : Array.from({ length: 9 }, (_, i) => ({
@@ -950,6 +838,132 @@ function openFormModal(tfId = null) {
     materialsToLoad.forEach(matData => addMaterialFormRow(matData));
 
     modalForm.classList.add("active");
+}
+
+function updateTargetFishBadges() {
+    const cards = targetFishFormContainer.querySelectorAll(".fish-form-card");
+    cards.forEach((card, index) => {
+        const title = card.querySelector(".fish-form-title span");
+        if (title) {
+            title.textContent = index === 0 ? "主要寶物魚 (第一隻) *" : `解鎖寶物魚 #${index + 1}`;
+        }
+        const delBtn = card.querySelector(".btn-del-target-fish");
+        if (delBtn) {
+            delBtn.style.display = cards.length > 1 ? "inline-block" : "none";
+        }
+    });
+}
+
+function addTargetFishFormCard(fishData = null, isFirstRequired = false) {
+    const currentCount = targetFishFormContainer.querySelectorAll(".fish-form-card").length;
+    const index = currentCount;
+    if (!fishData) {
+        fishData = { name: "", rewardTreasure: "", icon: index === 0 ? "👑" : "🐟" };
+    }
+
+    const fishCard = document.createElement("div");
+    fishCard.className = "fish-form-card";
+    const uniqueId = Date.now() + "_" + index;
+
+    fishCard.innerHTML = `
+        <div class="fish-form-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>${index === 0 ? "主要寶物魚 (第一隻) *" : `解鎖寶物魚 #${index + 1}`}</span>
+            <button type="button" class="btn btn-sm btn-danger btn-del-target-fish" title="刪除此目標魚" style="padding: 1px 6px; font-size: 0.75rem;">✕ 刪除</button>
+        </div>
+        <div class="form-group">
+            <label>寶物魚名稱 ${index === 0 ? '*' : ''}</label>
+            <input type="text" class="tf-name-in" ${index === 0 ? 'required' : ''} placeholder="例如：黃金神龍魚" value="${fishData.name}">
+        </div>
+        <div class="form-group">
+            <label>寶物名稱</label>
+            <input type="text" class="tf-reward-in" placeholder="(未輸入自動帶入 魚名+寶石)" value="${fishData.rewardTreasure}">
+        </div>
+        <div class="form-group">
+            <label>頭像圖片 / Emoji</label>
+            <div class="avatar-upload-box">
+                <div class="avatar-preview-circle tf-avatar-prev">${renderAvatarHTML(fishData.icon, index === 0 ? '👑' : '🐟')}</div>
+                <div class="avatar-input-controls">
+                    <div class="radio-row">
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="emoji" checked> Emoji</label>
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="upload"> 上傳圖片</label>
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="url"> 網址</label>
+                    </div>
+                    <input type="text" class="tf-icon-emoji-in" placeholder="輸入 Emoji" value="${isImageSource(fishData.icon) ? '' : (fishData.icon || (index === 0 ? '👑' : '🐟'))}">
+                    <input type="file" class="tf-file-upload-in" accept="image/*" style="display: none;">
+                    <input type="text" class="tf-icon-url-in" placeholder="圖片網址 (https://...)" value="${isImageSource(fishData.icon) && !fishData.icon.startsWith('data:') ? fishData.icon : ''}" style="display: none;">
+                </div>
+            </div>
+        </div>
+    `;
+
+    targetFishFormContainer.appendChild(fishCard);
+
+    const nameIn = fishCard.querySelector(".tf-name-in");
+    const rewardIn = fishCard.querySelector(".tf-reward-in");
+    const prevCircle = fishCard.querySelector(".tf-avatar-prev");
+    const emojiIn = fishCard.querySelector(".tf-icon-emoji-in");
+    const fileIn = fishCard.querySelector(".tf-file-upload-in");
+    const urlIn = fishCard.querySelector(".tf-icon-url-in");
+    const delBtn = fishCard.querySelector(".btn-del-target-fish");
+
+    let currentAvatar = fishData.icon || (index === 0 ? "👑" : "🐟");
+
+    // Auto fill reward treasure
+    nameIn.addEventListener("input", (e) => {
+        const fishName = e.target.value.trim();
+        if (!rewardIn.value.trim() || rewardIn.dataset.autoFilled === "true") {
+            if (fishName) {
+                rewardIn.value = `${fishName}寶石`;
+                rewardIn.dataset.autoFilled = "true";
+            } else {
+                rewardIn.value = "";
+                rewardIn.dataset.autoFilled = "false";
+            }
+        }
+    });
+    rewardIn.addEventListener("input", () => {
+        rewardIn.dataset.autoFilled = "false";
+    });
+
+    // Avatar type radio switch
+    fishCard.querySelectorAll(`input[name='tf-avatar-type-${uniqueId}']`).forEach(radio => {
+        radio.addEventListener("change", (e) => {
+            const type = e.target.value;
+            emojiIn.style.display = type === "emoji" ? "block" : "none";
+            fileIn.style.display = type === "upload" ? "block" : "none";
+            urlIn.style.display = type === "url" ? "block" : "none";
+        });
+    });
+
+    emojiIn.addEventListener("input", (e) => {
+        currentAvatar = e.target.value || (index === 0 ? "👑" : "🐟");
+        updateAvatarPreview(prevCircle, currentAvatar);
+    });
+    urlIn.addEventListener("input", (e) => {
+        currentAvatar = e.target.value || (index === 0 ? "👑" : "🐟");
+        updateAvatarPreview(prevCircle, currentAvatar);
+    });
+    fileIn.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            try {
+                currentAvatar = await compressImageFile(file, 250, 250);
+                updateAvatarPreview(prevCircle, currentAvatar);
+            } catch (err) {
+                console.error("Compression failed", err);
+            }
+        }
+    });
+
+    delBtn.addEventListener("click", () => {
+        fishCard.remove();
+        updateTargetFishBadges();
+    });
+
+    // Store reference to current avatar on card element for easy retrieval
+    fishCard.getCurrentAvatar = () => currentAvatar;
+
+    updateTargetFishBadges();
 }
 
 function updateMaterialBadges() {
@@ -1215,30 +1229,21 @@ function handleFormSubmit(e) {
     const id = document.getElementById("form-id").value;
     const yieldType = document.querySelector('input[name="yield-type"]:checked').value;
 
-    // Fish 1
-    const name1 = formNameInput.value.trim();
-    let reward1 = formRewardInput.value.trim();
-    if (!reward1 && name1) reward1 = `${name1}寶石`;
-    const icon1 = currentTfAvatarVal || "👑";
-
-    const fishes = [{
-        name: name1,
-        icon: icon1,
-        rewardTreasure: reward1
-    }];
-
-    // Fish 2 (Optional)
-    const name2 = formName2Input.value.trim();
-    if (name2) {
-        let reward2 = formReward2Input.value.trim();
-        if (!reward2) reward2 = `${name2}寶石`;
-        const icon2 = currentTf2AvatarVal || "🐟";
-        fishes.push({
-            name: name2,
-            icon: icon2,
-            rewardTreasure: reward2
-        });
-    }
+    const fishes = [];
+    const targetCards = targetFishFormContainer.querySelectorAll(".fish-form-card");
+    targetCards.forEach((card, index) => {
+        const tfName = card.querySelector(".tf-name-in").value.trim();
+        if (tfName || index === 0) {
+            let tfReward = card.querySelector(".tf-reward-in").value.trim();
+            if (!tfReward && tfName) tfReward = `${tfName}寶石`;
+            const tfIcon = typeof card.getCurrentAvatar === "function" ? card.getCurrentAvatar() : (index === 0 ? "👑" : "🐟");
+            fishes.push({
+                name: tfName || `解鎖寶物魚 ${index + 1}`,
+                icon: tfIcon,
+                rewardTreasure: tfReward || `寶物 ${index + 1}`
+            });
+        }
+    });
 
     const materials = [];
     const matCards = materialsFormContainer.querySelectorAll(".mat-input-card");

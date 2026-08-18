@@ -258,10 +258,9 @@ body {
     border: 1px solid var(--border-highlight); margin-bottom: 16px; display: flex; align-items: center;
 }
 
-.dual-fish-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+.target-fish-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;
 }
-@media (max-width: 768px) { .dual-fish-grid { grid-template-columns: 1fr; } }
 
 .fish-form-card {
     background: rgba(0, 0, 0, 0.25); border: 1px solid var(--border-color);
