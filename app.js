@@ -206,6 +206,12 @@ function setupEventListeners() {
     document.getElementById("btn-add-treasure-fish").addEventListener("click", () => openFormModal());
     document.getElementById("fab-add-fish").addEventListener("click", () => openFormModal());
 
+    document.getElementById("fab-reorder")?.addEventListener("click", openReorderModal);
+    document.getElementById("fab-export")?.addEventListener("click", exportData);
+    document.getElementById("fab-import")?.addEventListener("click", () => {
+        document.getElementById("file-import").click();
+    });
+
     // Auto-fill Fish 1 Reward
     formNameInput.addEventListener("input", (e) => {
         const fishName = e.target.value.trim();

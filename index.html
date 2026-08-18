@@ -289,11 +289,26 @@
         </div>
     </div>
 
-    <!-- Floating Action Button (FAB) for quick add -->
-    <button class="fab-add-btn" id="fab-add-fish" title="快速新增寶物魚配方">
-        <span class="fab-icon">✨</span>
-        <span class="fab-text">新增配方</span>
-    </button>
+    <!-- Floating Action Pill Capsule -->
+    <div class="floating-pill-capsule" id="floating-pill-bar">
+        <button id="fab-add-fish" class="pill-btn pill-btn-primary" title="新增寶物魚配方">
+            <span class="pill-icon">✨</span>
+            <span class="pill-label">新增</span>
+        </button>
+        <div class="pill-divider"></div>
+        <button id="fab-reorder" class="pill-btn" title="順序調整">
+            <span class="pill-icon">🔃</span>
+            <span class="pill-label">排序</span>
+        </button>
+        <button id="fab-export" class="pill-btn" title="匯出資料">
+            <span class="pill-icon">📤</span>
+            <span class="pill-label">匯出</span>
+        </button>
+        <button id="fab-import" class="pill-btn" title="匯入資料">
+            <span class="pill-icon">📥</span>
+            <span class="pill-label">匯入</span>
+        </button>
+    </div>
 
     <script src="app.js"></script>
 </body>
