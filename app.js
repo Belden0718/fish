@@ -467,7 +467,10 @@ function renderReorderItems() {
         row.className = "reorder-item-row";
         row.innerHTML = `
             <div class="reorder-item-left">
-                <span class="reorder-num-badge">#${idx + 1}</span>
+                <div style="display:flex; align-items:center; gap:2px;">
+                    <span style="color:var(--primary); font-weight:bold;">#</span>
+                    <input type="number" class="reorder-num-badge-input" min="1" max="${tempReorderList.length}" value="${idx + 1}" title="直接輸入順序數字調整位置 (1~${tempReorderList.length})">
+                </div>
                 <div class="reorder-item-avatar">${renderAvatarHTML(mainIcon, '👑')}</div>
                 <div>
                     <div class="reorder-item-title">${fishNamesStr}</div>
@@ -482,6 +485,27 @@ function renderReorderItems() {
             </div>
         `;
 
+        const numInput = row.querySelector(".reorder-num-badge-input");
+        numInput.addEventListener("focus", (e) => e.target.select());
+        
+        const handlePosChange = (e) => {
+            const newPos = parseInt(e.target.value, 10);
+            if (!isNaN(newPos) && newPos >= 1 && newPos <= tempReorderList.length && newPos !== idx + 1) {
+                moveTempItemToPosition(idx, newPos - 1);
+            } else {
+                e.target.value = idx + 1; // restore if invalid
+            }
+        };
+
+        numInput.addEventListener("change", handlePosChange);
+        numInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                handlePosChange(e);
+                numInput.blur();
+            }
+        });
+
         row.querySelector(".btn-temp-top").addEventListener("click", () => moveTempItem(idx, "top"));
         row.querySelector(".btn-temp-up").addEventListener("click", () => moveTempItem(idx, "up"));
         row.querySelector(".btn-temp-down").addEventListener("click", () => moveTempItem(idx, "down"));
@@ -489,6 +513,15 @@ function renderReorderItems() {
 
         reorderItemsList.appendChild(row);
     });
+}
+
+function moveTempItemToPosition(fromIndex, toIndex) {
+    if (fromIndex < 0 || fromIndex >= tempReorderList.length) return;
+    if (toIndex < 0 || toIndex >= tempReorderList.length) return;
+
+    const item = tempReorderList.splice(fromIndex, 1)[0];
+    tempReorderList.splice(toIndex, 0, item);
+    renderReorderItems();
 }
 
 // Single Item Reordering in Main View

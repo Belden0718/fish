@@ -345,8 +345,23 @@ body {
     display: flex; align-items: center; gap: 14px;
 }
 
-.reorder-num-badge {
-    color: var(--primary); font-weight: 700; font-size: 1rem; width: 28px;
+.reorder-num-badge-input {
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.95rem;
+    width: 48px;
+    padding: 2px 4px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.reorder-num-badge-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 8px var(--primary-glow);
+    background: rgba(0, 210, 255, 0.1);
 }
 
 .reorder-item-avatar {
@@ -605,36 +620,30 @@ body {
     position: fixed;
     top: 50%;
     right: 0;
-    transform: translateY(-50%) translateX(calc(100% - 14px));
-    z-index: 90;
+    transform: translateY(-50%) translateX(calc(100% - 36px));
+    z-index: 99;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 12px 10px 12px 14px;
-    border-radius: 24px 0 0 24px;
-    background: rgba(10, 25, 47, 0.45);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(0, 210, 255, 0.25);
+    gap: 8px;
+    padding: 14px 10px 14px 12px;
+    border-radius: 20px 0 0 20px;
+    background: rgba(10, 25, 47, 0.75);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--primary);
     border-right: none;
-    box-shadow: -5px 0 20px rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: -5px 0 25px rgba(0, 210, 255, 0.3);
+    opacity: 0.85;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
 }
 
-.floating-pill-capsule.visible {
-    opacity: 0.65;
-    pointer-events: auto;
-}
-
-.floating-pill-capsule.visible:hover {
+.floating-pill-capsule:hover {
     opacity: 1;
     transform: translateY(-50%) translateX(0);
-    background: rgba(10, 25, 47, 0.92);
-    border-color: var(--border-highlight);
-    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 210, 255, 0.25);
+    background: rgba(4, 13, 33, 0.95);
+    border-color: var(--primary);
+    box-shadow: -10px 0 35px rgba(0, 210, 255, 0.5), 0 0 20px var(--primary-glow);
 }
 
 .pill-btn {
