@@ -212,6 +212,20 @@ function setupEventListeners() {
         document.getElementById("file-import").click();
     });
 
+    // Scroll listener for floating pill capsule visibility
+    const floatingPill = document.getElementById("floating-pill-bar");
+    if (floatingPill) {
+        const handleScroll = () => {
+            if (window.scrollY > 150) {
+                floatingPill.classList.add("visible");
+            } else {
+                floatingPill.classList.remove("visible");
+            }
+        };
+        window.addEventListener("scroll", handleScroll);
+        handleScroll(); // initial check
+    }
+
     // Auto-fill Fish 1 Reward
     formNameInput.addEventListener("input", (e) => {
         const fishName = e.target.value.trim();
