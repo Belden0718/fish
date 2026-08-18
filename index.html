@@ -133,9 +133,16 @@
 
                 <!-- Analytics Dashboard View -->
                 <div id="analytics-view" class="view-panel">
-                    <div class="analytics-header">
-                        <h2>📈 寶物需求消耗分析面板</h2>
-                        <p style="color: var(--text-muted); font-size: 0.9rem;">統計所有寶物魚合成時，材料寶物的總需求量與熱門程度排行 (點擊按鈕可查看出處)</p>
+                    <div class="analytics-header" style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h2>📈 寶物需求消耗分析面板</h2>
+                            <p style="color: var(--text-muted); font-size: 0.9rem;">統計所有寶物魚合成時，材料寶物的總需求量與熱門程度排行 (點擊按鈕可查看出處)</p>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-highlight); display: flex; align-items: center; gap: 8px;">
+                            <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; color: var(--primary);">
+                                <input type="checkbox" id="chk-ignore-rare-treasures" checked> 🚫 忽略稀有寶物 (過濾: 寶物遊樂場、神秘寶箱、免費禮物)
+                            </label>
+                        </div>
                     </div>
                     <div class="analytics-grid" id="analytics-dashboard">
                         <!-- Analytics Widgets -->
@@ -240,7 +247,6 @@
 
     <!-- Floating Action Pill Capsule -->
     <div class="floating-pill-capsule" id="floating-pill-bar">
-        <div class="capsule-handle-tab" title="滑鼠靠近展開選單" style="font-size: 0.75rem; color: var(--primary); font-weight: bold; cursor: pointer; margin-bottom: 2px;">◀ 快捷</div>
         <button id="fab-add-fish" class="pill-btn pill-btn-primary" title="新增寶物魚配方">
             <span class="pill-icon">✨</span>
             <span class="pill-label">新增</span>

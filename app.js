@@ -204,6 +204,10 @@ function setupEventListeners() {
     document.getElementById("view-mode-analytics").addEventListener("click", () => setViewMode("analytics"));
     document.getElementById("view-mode-table").addEventListener("click", () => setViewMode("table"));
 
+    document.getElementById("chk-ignore-rare-treasures")?.addEventListener("change", () => {
+        render();
+    });
+
     document.getElementById("btn-add-treasure-fish").addEventListener("click", () => openFormModal());
     document.getElementById("fab-add-fish").addEventListener("click", () => openFormModal());
 
@@ -213,19 +217,7 @@ function setupEventListeners() {
         document.getElementById("file-import").click();
     });
 
-    // Scroll listener for floating pill capsule visibility
-    const floatingPill = document.getElementById("floating-pill-bar");
-    if (floatingPill) {
-        const handleScroll = () => {
-            if (window.scrollY > 150) {
-                floatingPill.classList.add("visible");
-            } else {
-                floatingPill.classList.remove("visible");
-            }
-        };
-        window.addEventListener("scroll", handleScroll);
-        handleScroll(); // initial check
-    }
+
 
     document.getElementById("btn-add-target-fish-row")?.addEventListener("click", () => {
         addTargetFishFormCard();
@@ -325,16 +317,29 @@ function isFreeGiftMaterial(m) {
     return matName.includes("免費禮物") || treasureName.includes("免費禮物");
 }
 
+// Check if material should be ignored when "忽略稀有寶物" option is enabled
+function shouldIgnoreMaterial(m, ignoreRare = true) {
+    if (ignoreRare) {
+        const matName = m.name || "";
+        const treasureName = m.treasure || "";
+        const keywords = ["寶物遊樂場", "神秘寶箱", "免費禮物"];
+        return keywords.some(k => matName.includes(k) || treasureName.includes(k));
+    }
+    return false;
+}
+
 function updateStats() {
     statTreasureCount.textContent = treasureFishList.length;
     
+    const chkEl = document.getElementById("chk-ignore-rare-treasures");
+    const ignoreRare = chkEl ? chkEl.checked : true;
     const treasureMap = {};
     let totalQty = 0;
 
     treasureFishList.forEach(tf => {
         tf.materials.forEach(m => {
             totalQty += m.qty;
-            if (!isFreeGiftMaterial(m)) {
+            if (!shouldIgnoreMaterial(m, ignoreRare)) {
                 treasureMap[m.treasure] = (treasureMap[m.treasure] || 0) + m.qty;
             }
         });
@@ -488,9 +493,12 @@ function renderReorderItems() {
         const numInput = row.querySelector(".reorder-num-badge-input");
         numInput.addEventListener("focus", (e) => e.target.select());
         
+        let isProcessing = false;
         const handlePosChange = (e) => {
+            if (isProcessing) return;
             const newPos = parseInt(e.target.value, 10);
             if (!isNaN(newPos) && newPos >= 1 && newPos <= tempReorderList.length && newPos !== idx + 1) {
+                isProcessing = true;
                 moveTempItemToPosition(idx, newPos - 1);
             } else {
                 e.target.value = idx + 1; // restore if invalid
@@ -501,8 +509,7 @@ function renderReorderItems() {
         numInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") {
                 e.preventDefault();
-                handlePosChange(e);
-                numInput.blur();
+                numInput.blur(); // blur will naturally fire change event once
             }
         });
 
@@ -680,10 +687,13 @@ function renderAnalytics(list) {
         return;
     }
 
+    const chkEl = document.getElementById("chk-ignore-rare-treasures");
+    const ignoreRare = chkEl ? chkEl.checked : true;
+
     const treasureDemandMap = {};
     list.forEach(tf => {
         tf.materials.forEach(m => {
-            if (!isFreeGiftMaterial(m)) {
+            if (!shouldIgnoreMaterial(m, ignoreRare)) {
                 if (!treasureDemandMap[m.treasure]) {
                     treasureDemandMap[m.treasure] = { qty: 0, icon: m.icon, usedInCount: 0 };
                 }
@@ -699,7 +709,7 @@ function renderAnalytics(list) {
     if (sortedDemand.length === 0) {
         analyticsDashboard.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
-                所有寶物來源皆為「免費禮物」，無須計算額外寶物需求！
+                ${ignoreRare ? '所有材料寶物皆已被過濾（含寶物遊樂場、神秘寶箱、免費禮物）' : '所有寶物來源皆為「免費禮物」，無須計算額外寶物需求！'}
             </div>
         `;
         return;
@@ -729,11 +739,15 @@ function renderAnalytics(list) {
         `;
     }).join("");
 
+    const subtitleText = ignoreRare 
+        ? "已勾選「忽略稀有寶物」，已排除含【寶物遊樂場】、【神秘寶箱】、【免費禮物】之項目" 
+        : "已忽略含「免費禮物」之免費寶物來源 (點擊出處可檢視明細)";
+
     analyticsDashboard.innerHTML = `
         <div class="analytics-widget" style="grid-column: 1 / -1;">
             <div class="widget-title">
                 <span>🔥 全圖鑑材料寶物需求排行榜 (Top 100)</span>
-                <span style="font-size:0.8rem; color:var(--text-muted);">已忽略含「免費禮物」之免費寶物來源 (點擊出處可檢視明細)</span>
+                <span style="font-size:0.8rem; color:var(--text-muted);">${subtitleText}</span>
             </div>
             <div class="chart-bar-list">
                 ${topDemandChartHTML}
@@ -1311,7 +1325,7 @@ function handleFormSubmit(e) {
             fishes,
             materials
         };
-        treasureFishList.push(newTf);
+        treasureFishList.unshift(newTf); // Insert at top (#1 position)
     }
 
     saveData();
