@@ -208,6 +208,10 @@ function setupEventListeners() {
         render();
     });
 
+    document.getElementById("select-analytics-sort")?.addEventListener("change", () => {
+        render();
+    });
+
     document.getElementById("btn-add-treasure-fish").addEventListener("click", () => openFormModal());
     document.getElementById("fab-add-fish").addEventListener("click", () => openFormModal());
 
@@ -317,12 +321,12 @@ function isFreeGiftMaterial(m) {
     return matName.includes("免費禮物") || treasureName.includes("免費禮物");
 }
 
-// Check if material should be ignored when "忽略稀有寶物" option is enabled
+// Check if material should be ignored when "忽略特殊寶物" option is enabled
 function shouldIgnoreMaterial(m, ignoreRare = true) {
     if (ignoreRare) {
         const matName = m.name || "";
         const treasureName = m.treasure || "";
-        const keywords = ["寶物遊樂場", "神秘寶箱", "免費禮物"];
+        const keywords = ["寶物遊樂場", "神秘寶箱", "免費禮物", "道具"];
         return keywords.some(k => matName.includes(k) || treasureName.includes(k));
     }
     return false;
@@ -690,6 +694,9 @@ function renderAnalytics(list) {
     const chkEl = document.getElementById("chk-ignore-rare-treasures");
     const ignoreRare = chkEl ? chkEl.checked : true;
 
+    const sortEl = document.getElementById("select-analytics-sort");
+    const sortMode = sortEl ? sortEl.value : "qty";
+
     const treasureDemandMap = {};
     list.forEach(tf => {
         tf.materials.forEach(m => {
@@ -704,7 +711,19 @@ function renderAnalytics(list) {
     });
 
     const sortedDemand = Object.entries(treasureDemandMap)
-        .sort((a, b) => b[1].qty - a[1].qty);
+        .sort((a, b) => {
+            if (sortMode === "count") {
+                if (b[1].usedInCount !== a[1].usedInCount) {
+                    return b[1].usedInCount - a[1].usedInCount;
+                }
+                return b[1].qty - a[1].qty;
+            } else {
+                if (b[1].qty !== a[1].qty) {
+                    return b[1].qty - a[1].qty;
+                }
+                return b[1].usedInCount - a[1].usedInCount;
+            }
+        });
 
     if (sortedDemand.length === 0) {
         analyticsDashboard.innerHTML = `
@@ -715,10 +734,13 @@ function renderAnalytics(list) {
         return;
     }
 
-    const maxDemandQty = sortedDemand[0][1].qty;
+    const maxVal = sortMode === "count" 
+        ? Math.max(...sortedDemand.map(([_, d]) => d.usedInCount))
+        : sortedDemand[0][1].qty;
 
     const topDemandChartHTML = sortedDemand.slice(0, 100).map(([name, data], idx) => {
-        const percentage = Math.round((data.qty / maxDemandQty) * 100);
+        const currentVal = sortMode === "count" ? data.usedInCount : data.qty;
+        const percentage = Math.round((currentVal / maxVal) * 100);
         return `
             <div class="chart-bar-item">
                 <div class="bar-label-row">
@@ -730,7 +752,7 @@ function renderAnalytics(list) {
                             🔍 出現在 ${data.usedInCount} 組寶物魚配方 ▾
                         </button>
                     </span>
-                    <span style="color:var(--primary); font-weight:bold;">${data.qty} 個</span>
+                    <span style="color:var(--primary); font-weight:bold;">${sortMode === "count" ? `${data.usedInCount} 組配方 (共 ${data.qty} 個)` : `${data.qty} 個`}</span>
                 </div>
                 <div class="bar-track">
                     <div class="bar-fill" style="width: ${percentage}%;"></div>
@@ -740,7 +762,7 @@ function renderAnalytics(list) {
     }).join("");
 
     const subtitleText = ignoreRare 
-        ? "已勾選「忽略稀有寶物」，已排除含【寶物遊樂場】、【神秘寶箱】、【免費禮物】之項目" 
+        ? "已勾選「忽略特殊寶物」，已排除含【寶物遊樂場】、【神秘寶箱】、【免費禮物】、【道具】之項目" 
         : "已忽略含「免費禮物」之免費寶物來源 (點擊出處可檢視明細)";
 
     analyticsDashboard.innerHTML = `
@@ -775,13 +797,10 @@ function renderTable(list) {
     table.innerHTML = `
         <thead>
             <tr>
-                <th>產出寶物魚名稱</th>
-                <th>解鎖寶物</th>
-                <th>材料編號</th>
-                <th>材料魚頭像與名稱</th>
-                <th>材料魚產出寶物</th>
-                <th>需求數量</th>
-                <th>順序調整</th>
+                <th style="width: 22%;">產出寶物魚名稱</th>
+                <th style="width: 18%;">解鎖寶物</th>
+                <th>9 種材料需求總覽 (魚名 / 產出寶物 / 數量)</th>
+                <th style="width: 10%; text-align: center;">順序調整</th>
             </tr>
         </thead>
         <tbody>
@@ -796,32 +815,52 @@ function renderTable(list) {
                 const fishNamesHTML = tf.fishes.map(f => `
                     <div style="display:flex; align-items:center; gap:8px;">
                         <div class="tf-avatar" style="width:32px; height:32px; font-size:1.1rem;">${renderAvatarHTML(f.icon, '👑')}</div>
-                        ${f.name}
+                        <span style="font-weight:bold;">${f.name}</span>
                     </div>
                 `).join(`<div style="font-size:0.75rem; color:var(--primary); font-weight:bold; padding-left:12px;">${dividerSymbol}</div>`);
                 
                 const rewardsHTML = tf.fishes.map(f => `<div>💎 ${f.rewardTreasure}</div>`).join("");
 
-                return tf.materials.map((m, idx) => `
-                    <tr>
-                        ${idx === 0 ? `<td rowspan="9" style="font-weight:bold; color:var(--text-main); vertical-align:middle; border-right:1px solid var(--border-color);">${fishNamesHTML} <span style="font-size:0.75rem; color:var(--primary);">${yieldBadgeText}</span></td>` : ''}
-                        ${idx === 0 ? `<td rowspan="9" style="color:#ffd700; font-weight:bold; vertical-align:middle; border-right:1px solid var(--border-color);">${rewardsHTML}</td>` : ''}
-                        <td style="color:var(--primary); font-weight:bold;">#${idx + 1}</td>
-                        <td><div style="display:flex; align-items:center; gap:8px;"><div class="mat-icon" style="width:28px; height:28px; font-size:1.1rem;">${renderAvatarHTML(m.icon, '🐟')}</div> ${m.name}</div></td>
-                        <td style="color:#ffd700;">【${m.treasure}】</td>
-                        <td style="font-weight:bold; color:var(--primary);">x${m.qty}</td>
-                        ${idx === 0 ? `
-                            <td rowspan="9" style="vertical-align:middle; text-align:center;">
-                                <div class="order-controls-group" style="justify-content:center;">
-                                    <button class="btn-order btn-move-top" data-id="${tf.id}" title="移至最前" ${isFirst || isSearching ? 'disabled' : ''}>⏫</button>
-                                    <button class="btn-order btn-move-up" data-id="${tf.id}" title="上移" ${isFirst || isSearching ? 'disabled' : ''}>▲</button>
-                                    <button class="btn-order btn-move-down" data-id="${tf.id}" title="下移" ${isLast || isSearching ? 'disabled' : ''}>▼</button>
-                                    <button class="btn-order btn-move-bottom" data-id="${tf.id}" title="移至最後" ${isLast || isSearching ? 'disabled' : ''}>⏬</button>
+                const materialsGridHTML = `
+                    <div class="table-mat-grid">
+                        ${tf.materials.map((m, idx) => `
+                            <div class="table-mat-chip">
+                                <div style="display:flex; align-items:center; gap:6px; min-width:0; overflow:hidden;">
+                                    <span style="color:var(--primary); font-weight:bold; font-size:0.75rem; flex-shrink:0;">#${idx + 1}</span>
+                                    <div class="mat-icon" style="width:24px; height:24px; font-size:0.95rem; flex-shrink:0;">${renderAvatarHTML(m.icon, '🐟')}</div>
+                                    <div style="display:flex; flex-direction:column; min-width:0; overflow:hidden;">
+                                        <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600;" title="${m.name}">${m.name}</span>
+                                        <span style="font-size:0.75rem; color:#ffd700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${m.treasure}">【${m.treasure}】</span>
+                                    </div>
                                 </div>
-                            </td>
-                        ` : ''}
+                                <span style="font-weight:bold; color:var(--primary); flex-shrink:0;">x${m.qty}</span>
+                            </div>
+                        `).join("")}
+                    </div>
+                `;
+
+                return `
+                    <tr>
+                        <td style="vertical-align:middle; border-right:1px solid var(--border-color);">
+                            ${fishNamesHTML} 
+                            <span style="font-size:0.75rem; color:var(--primary);">${yieldBadgeText}</span>
+                        </td>
+                        <td style="color:#ffd700; font-weight:bold; vertical-align:middle; border-right:1px solid var(--border-color);">
+                            ${rewardsHTML}
+                        </td>
+                        <td style="vertical-align:middle;">
+                            ${materialsGridHTML}
+                        </td>
+                        <td style="vertical-align:middle; text-align:center;">
+                            <div class="order-controls-group" style="justify-content:center;">
+                                <button class="btn-order btn-move-top" data-id="${tf.id}" title="移至最前" ${isFirst || isSearching ? 'disabled' : ''}>⏫</button>
+                                <button class="btn-order btn-move-up" data-id="${tf.id}" title="上移" ${isFirst || isSearching ? 'disabled' : ''}>▲</button>
+                                <button class="btn-order btn-move-down" data-id="${tf.id}" title="下移" ${isLast || isSearching ? 'disabled' : ''}>▼</button>
+                                <button class="btn-order btn-move-bottom" data-id="${tf.id}" title="移至最後" ${isLast || isSearching ? 'disabled' : ''}>⏬</button>
+                            </div>
+                        </td>
                     </tr>
-                `).join("");
+                `;
             }).join("")}
         </tbody>
     `;
@@ -1060,7 +1099,7 @@ function addMaterialFormRow(matData = null) {
         <input type="text" class="mat-treasure-in" placeholder="材料魚寶物名稱 (未輸入自動帶入 魚名+寶石)" value="${matData.treasure}">
         <div style="display:flex; align-items:center; justify-content:space-between;">
             <span style="font-size:0.75rem; color:var(--text-muted);">需求數量:</span>
-            <input type="number" class="mat-qty-in" min="1" max="999" value="${matData.qty}" style="width:70px; text-align:center;" required>
+            <input type="number" class="mat-qty-in" min="1" max="99999" value="${matData.qty}" style="width:80px; text-align:center;" required>
         </div>
     `;
 

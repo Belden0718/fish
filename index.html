@@ -138,9 +138,16 @@
                             <h2>📈 寶物需求消耗分析面板</h2>
                             <p style="color: var(--text-muted); font-size: 0.9rem;">統計所有寶物魚合成時，材料寶物的總需求量與熱門程度排行 (點擊按鈕可查看出處)</p>
                         </div>
-                        <div style="background: rgba(0,0,0,0.3); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-highlight); display: flex; align-items: center; gap: 8px;">
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-highlight); display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">排序方式:</span>
+                                <select id="select-analytics-sort" style="padding: 4px 8px; font-size: 0.85rem; border-radius: 4px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-highlight);">
+                                    <option value="qty">依需求總數量 (預設)</option>
+                                    <option value="count">依出現組合數量</option>
+                                </select>
+                            </div>
                             <label style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 600; color: var(--primary);">
-                                <input type="checkbox" id="chk-ignore-rare-treasures" checked> 🚫 忽略稀有寶物 (過濾: 寶物遊樂場、神秘寶箱、免費禮物)
+                                <input type="checkbox" id="chk-ignore-rare-treasures" checked> 🚫 忽略特殊寶物 (過濾: 寶物遊樂場、神秘寶箱、免費禮物、道具)
                             </label>
                         </div>
                     </div>
