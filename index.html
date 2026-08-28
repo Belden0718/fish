@@ -37,6 +37,9 @@
                 </div>
             </div>
             <div class="header-actions">
+                <button id="btn-open-friends-modal" class="btn btn-secondary">
+                    <span class="icon">👥</span> 好友魚缸簿
+                </button>
                 <button id="btn-open-reorder-modal" class="btn btn-secondary">
                     <span class="icon">🔃</span> 順序調整
                 </button>
@@ -99,7 +102,7 @@
             <aside class="sidebar">
                 <div class="search-box">
                     <span class="search-icon">🔍</span>
-                    <input type="text" id="search-input" placeholder="搜尋寶物魚或材料寶物...">
+                    <input type="text" id="search-input" placeholder="搜尋寶物魚、材料寶物或好友名稱...">
                 </div>
 
                 <div class="filter-group">
@@ -107,6 +110,9 @@
                     <div class="segmented-control">
                         <button class="segment-btn active" id="view-mode-cards">
                             <img src="nav-encyclopedia.png" alt="寶物魚圖鑑" class="nav-btn-img"> <span>寶物魚圖鑑</span>
+                        </button>
+                        <button class="segment-btn" id="view-mode-friends">
+                            <span class="nav-btn-icon" style="font-size:1.2rem;">👥</span> <span>好友魚缸簿</span>
                         </button>
                         <button class="segment-btn" id="view-mode-analytics">
                             <img src="nav-analysis.png" alt="寶物需求分析" class="nav-btn-img"> <span>寶物需求分析</span>
@@ -163,6 +169,22 @@
                         <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">列出所有寶物魚對應的 9 種材料魚與所需數量</p>
                     </div>
                     <div class="table-container" id="table-container-box">
+                        <!-- Generated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Friends View -->
+                <div id="friends-view" class="view-panel">
+                    <div class="friends-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div>
+                            <h2>👥 好友魚缸巡覽簿</h2>
+                            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">紀錄各個好友各個魚缸養了哪些寶物魚，方便每日巡缸或定點摸魚</p>
+                        </div>
+                        <button id="btn-add-friend" class="btn btn-primary">
+                            <span class="icon">➕</span> 新增好友與魚缸
+                        </button>
+                    </div>
+                    <div class="friends-grid" id="friends-cards-container" style="margin-top: 20px;">
                         <!-- Generated dynamically -->
                     </div>
                 </div>
@@ -248,6 +270,59 @@
             </div>
             <div class="modal-footer" style="margin-top: 20px;">
                 <button type="button" class="btn btn-primary" id="btn-close-usage">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Friend Form (Add/Edit Friend & Tanks) -->
+    <div class="modal-backdrop" id="modal-friend-form">
+        <div class="modal-card">
+            <button class="modal-close" id="modal-friend-close">&times;</button>
+            <div class="modal-header">
+                <h2 id="friend-modal-title">👤 新增好友魚缸紀錄</h2>
+            </div>
+            <form id="friend-form">
+                <input type="hidden" id="friend-form-id">
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label style="display:block; margin-bottom: 6px; font-weight:600; color:var(--primary);">好友名稱 / 暱稱：</label>
+                    <input type="text" id="friend-name-input" placeholder="例如：小明、老王" required style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-color); border-radius:var(--radius-sm); color:var(--text-main);">
+                </div>
+
+                <div class="form-section-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 12px;">
+                    <span>🐟 魚缸設定與魚隻紀錄</span>
+                    <button type="button" class="btn btn-sm btn-secondary" id="btn-add-tank-row">+ 新增魚缸</button>
+                </div>
+
+                <div id="friend-tanks-container" style="display:flex; flex-direction:column; gap:12px; max-height:350px; overflow-y:auto; padding-right:4px;">
+                    <!-- Dynamic Tank Rows -->
+                </div>
+
+                <div class="modal-footer" style="margin-top: 20px;">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-friend-form">取消</button>
+                    <button type="submit" class="btn btn-primary">儲存好友資料</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Edit Fish Location (Quick Edit Location on Fish Card) -->
+    <div class="modal-backdrop" id="modal-fish-location">
+        <div class="modal-card">
+            <button class="modal-close" id="modal-fish-location-close">&times;</button>
+            <div class="modal-header">
+                <h2 id="fish-location-modal-title">📍 管理魚隻的好友位置</h2>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;" id="fish-location-modal-subtitle">設定這隻魚在哪個好友的第幾缸</p>
+            </div>
+            <input type="hidden" id="fish-location-target-name">
+            <div id="fish-location-rows-container" style="display:flex; flex-direction:column; gap:10px; margin: 16px 0; max-height: 300px; overflow-y: auto;">
+                <!-- Dynamic Location Rows -->
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-add-location-row" style="width:100%; justify-content:center; margin-bottom:16px;">
+                + 新增摸魚點 (好友/魚缸)
+            </button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="btn-cancel-fish-location">取消</button>
+                <button type="button" class="btn btn-primary" id="btn-save-fish-location">儲存變更</button>
             </div>
         </div>
     </div>

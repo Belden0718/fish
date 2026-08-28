@@ -14,6 +14,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const dbRef = db.ref('treasureFishList');
+const friendsDbRef = db.ref('friendsList');
 
 // Image Compressor & Helper Utility
 function compressImageFile(file, maxWidth = 250, maxHeight = 250, quality = 0.85) {
@@ -57,9 +58,10 @@ function compressImageFile(file, maxWidth = 250, maxHeight = 250, quality = 0.85
 
 // Initial Data
 let treasureFishList = [];
+let friendsList = []; // Array of { id, name, tanks: [{ tankNo: 1, fishes: ["魚名1", "魚名2"] }] }
 let tempReorderList = []; // Scratch array for reorder modal state
 let currentSearch = "";
-let currentViewMode = "cards"; // 'cards' | 'analytics' | 'table'
+let currentViewMode = "cards"; // 'cards' | 'friends' | 'analytics' | 'table'
 
 // Temporary Avatar State in Form
 let currentTfAvatarVal = "👑";
@@ -122,7 +124,6 @@ function setupFirebaseSync() {
         } else if (data && typeof data === 'object') {
             treasureFishList = Object.values(data);
         } else {
-            // First time initialization: Seed from static data.json file if available
             seedInitialDataFromLocal();
             return;
         }
@@ -132,6 +133,23 @@ function setupFirebaseSync() {
     }, (error) => {
         console.error("Firebase read failed, using local storage fallback", error);
         loadFromLocalStorageFallback();
+        render();
+    });
+
+    friendsDbRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data && Array.isArray(data)) {
+            friendsList = data;
+        } else if (data && typeof data === 'object') {
+            friendsList = Object.values(data);
+        } else {
+            const savedFriends = localStorage.getItem("aqua_fish_friends_db");
+            friendsList = savedFriends ? (JSON.parse(savedFriends) || []) : [];
+        }
+        render();
+    }, (error) => {
+        const savedFriends = localStorage.getItem("aqua_fish_friends_db");
+        friendsList = savedFriends ? (JSON.parse(savedFriends) || []) : [];
         render();
     });
 }
@@ -171,8 +189,12 @@ function loadFromLocalStorageFallback() {
 }
 
 function normalizeData() {
-    treasureFishList.forEach(tf => {
+    const defaultQtys = [25, 15, 25, 25, 20, 15, 30, 20, 30];
+    let isModified = false;
+
+    treasureFishList.forEach((tf, index) => {
         if (!tf.yieldType) tf.yieldType = "both";
+        if (!tf.locations) tf.locations = []; // Location array: [{ friend: "小明", tank: 1 }]
         if (!tf.fishes) {
             tf.fishes = [{
                 name: tf.name,
@@ -180,7 +202,41 @@ function normalizeData() {
                 rewardTreasure: tf.rewardTreasure
             }];
         }
+
+        // Auto update treasure name for 小黃鈕斑馬螺 -> 金黃斑馬螺
+        if (tf.fishes) {
+            tf.fishes.forEach(f => {
+                if (f.name === "小黃鈕斑馬螺" && f.rewardTreasure !== "金黃斑馬螺") {
+                    f.rewardTreasure = "金黃斑馬螺";
+                    isModified = true;
+                }
+            });
+        }
+        if (tf.materials) {
+            tf.materials.forEach(m => {
+                if (m.name === "小黃鈕斑馬螺" && m.treasure !== "金黃斑馬螺") {
+                    m.treasure = "金黃斑馬螺";
+                    isModified = true;
+                }
+            });
+        }
+
+        // Apply default quantities for first 16 recipes
+        if (index < 16 && tf.materials && Array.isArray(tf.materials)) {
+            tf.materials.forEach((m, mIdx) => {
+                if (mIdx < 9 && defaultQtys[mIdx] !== undefined) {
+                    if (m.qty !== defaultQtys[mIdx]) {
+                        m.qty = defaultQtys[mIdx];
+                        isModified = true;
+                    }
+                }
+            });
+        }
     });
+
+    if (isModified) {
+        saveData();
+    }
 }
 
 // Save data to Firebase (Global Sync) + localStorage backup
@@ -194,6 +250,13 @@ function saveData() {
     localStorage.setItem("aqua_fish_avatar_db", JSON.stringify(treasureFishList));
 }
 
+function saveFriendsData() {
+    friendsDbRef.set(friendsList).catch(err => {
+        console.error("Firebase friends save failed", err);
+    });
+    localStorage.setItem("aqua_fish_friends_db", JSON.stringify(friendsList));
+}
+
 function setupEventListeners() {
     searchInput.addEventListener("input", (e) => {
         currentSearch = e.target.value.toLowerCase().trim();
@@ -201,6 +264,7 @@ function setupEventListeners() {
     });
 
     document.getElementById("view-mode-cards").addEventListener("click", () => setViewMode("cards"));
+    document.getElementById("view-mode-friends")?.addEventListener("click", () => setViewMode("friends"));
     document.getElementById("view-mode-analytics").addEventListener("click", () => setViewMode("analytics"));
     document.getElementById("view-mode-table").addEventListener("click", () => setViewMode("table"));
 
@@ -279,6 +343,9 @@ function setViewMode(mode) {
     if (mode === "cards") {
         document.getElementById("view-mode-cards").classList.add("active");
         document.getElementById("cards-view").classList.add("active");
+    } else if (mode === "friends") {
+        document.getElementById("view-mode-friends")?.classList.add("active");
+        document.getElementById("friends-view")?.classList.add("active");
     } else if (mode === "analytics") {
         document.getElementById("view-mode-analytics").classList.add("active");
         document.getElementById("analytics-view").classList.add("active");
@@ -299,14 +366,19 @@ function render() {
         const searchMatchesMat = item.materials.some(m => 
             m.name.toLowerCase().includes(currentSearch) || m.treasure.toLowerCase().includes(currentSearch)
         );
+        const searchMatchesLoc = (item.locations || []).some(l => 
+            l.friend.toLowerCase().includes(currentSearch)
+        );
 
-        return searchMatchesTf || searchMatchesMat;
+        return searchMatchesTf || searchMatchesMat || searchMatchesLoc;
     });
 
     gridCount.textContent = `${filtered.length} 組寶物魚配方`;
 
     if (currentViewMode === "cards") {
         renderCards(filtered);
+    } else if (currentViewMode === "friends") {
+        renderFriendsView();
     } else if (currentViewMode === "analytics") {
         renderAnalytics(filtered);
     } else {
@@ -626,18 +698,60 @@ function renderCards(list) {
             `;
         }
 
-        const materialsHTML = tf.materials.map((m, index) => `
-            <div class="mat-item-box">
-                <div class="mat-info-left">
-                    <div class="mat-icon">${renderAvatarHTML(m.icon, '🐟')}</div>
-                    <div>
-                        <div class="mat-name">#${index + 1} ${m.name}</div>
-                        <div class="mat-treasure">寶物：【${m.treasure}】</div>
+        const materialsHTML = tf.materials.map((m, index) => {
+            const mLocs = m.locations || [];
+            const mFriendMap = new Map();
+            mLocs.forEach(loc => {
+                if (!mFriendMap.has(loc.friend)) mFriendMap.set(loc.friend, []);
+                if (!mFriendMap.get(loc.friend).includes(loc.tank)) mFriendMap.get(loc.friend).push(loc.tank);
+            });
+            const mLocStr = Array.from(mFriendMap.entries()).map(([fr, tanks]) => {
+                tanks.sort((a,b)=>a-b);
+                return `${fr}(缸${tanks.join(",")})`;
+            }).join(" ");
+
+            return `
+                <div class="mat-item-box">
+                    <div class="mat-info-left">
+                        <div class="mat-icon">${renderAvatarHTML(m.icon, '🐟')}</div>
+                        <div>
+                            <div class="mat-name">#${index + 1} ${m.name}</div>
+                            <div class="mat-treasure">寶物：【${m.treasure}】</div>
+                            ${mLocStr ? `<div style="font-size:0.72rem; color:var(--primary); margin-top:2px;">📍 摸寶：${mLocStr}</div>` : ''}
+                        </div>
                     </div>
+                    <div class="mat-qty">x${m.qty}</div>
                 </div>
-                <div class="mat-qty">x${m.qty}</div>
-            </div>
-        `).join("");
+            `;
+        }).join("");
+
+        // Build grouped location chips HTML (Group tanks for same friend: e.g., 王詩斌 (缸1,2,3))
+        const locations = tf.locations || [];
+        const friendTanksMap = new Map();
+        locations.forEach(loc => {
+            if (!friendTanksMap.has(loc.friend)) {
+                friendTanksMap.set(loc.friend, []);
+            }
+            if (!friendTanksMap.get(loc.friend).includes(loc.tank)) {
+                friendTanksMap.get(loc.friend).push(loc.tank);
+            }
+        });
+
+        let locationChipsHTML = Array.from(friendTanksMap.entries()).map(([friend, tanks]) => {
+            tanks.sort((a, b) => a - b);
+            const tanksStr = tanks.join(",");
+            return `
+                <span class="location-chip" data-friend="${friend}">
+                    📍 ${friend} (缸${tanksStr})
+                </span>
+            `;
+        }).join("");
+
+        locationChipsHTML += `
+            <button class="location-chip location-chip-add btn-edit-fish-locations" data-id="${tf.id}">
+                ➕ 設定摸魚地點
+            </button>
+        `;
 
         card.innerHTML = `
             <div class="treasure-card-header">
@@ -665,6 +779,11 @@ function renderCards(list) {
             <div class="materials-grid-3x3">
                 ${materialsHTML}
             </div>
+
+            <div class="location-chips-container">
+                <span style="font-size: 0.8rem; color: var(--text-muted); display:flex; align-items:center;">📍 好友摸魚地點：</span>
+                ${locationChipsHTML}
+            </div>
         `;
 
         card.querySelector(".btn-move-top")?.addEventListener("click", () => moveTreasureFish(tf.id, "top"));
@@ -674,6 +793,7 @@ function renderCards(list) {
 
         card.querySelector(".btn-edit").addEventListener("click", () => openFormModal(tf.id));
         card.querySelector(".btn-delete").addEventListener("click", () => deleteTreasureFish(tf.id));
+        card.querySelector(".btn-edit-fish-locations")?.addEventListener("click", () => openFishLocationModal(tf.fishes[0]?.name || tf.name));
 
         treasureCardsContainer.appendChild(card);
     });
@@ -911,15 +1031,20 @@ function openFormModal(tfId = null) {
 
     targetFishesToLoad.forEach((fishData, i) => addTargetFishFormCard(fishData, i === 0));
 
+    const defaultQtys = [25, 15, 25, 25, 20, 15, 30, 20, 30];
+
     // Load Material Fishes
-    const materialsToLoad = (existingData && existingData.materials && existingData.materials.length > 0) 
-        ? existingData.materials 
-        : Array.from({ length: 9 }, (_, i) => ({
+    let materialsToLoad = [];
+    if (existingData && existingData.materials && existingData.materials.length > 0) {
+        materialsToLoad = existingData.materials;
+    } else {
+        materialsToLoad = Array.from({ length: 9 }, (_, i) => ({
             name: `材料魚 ${i + 1}`,
             treasure: `材料魚 ${i + 1}寶石`,
-            qty: 25,
+            qty: defaultQtys[i] !== undefined ? defaultQtys[i] : 25,
             icon: "🐟"
         }));
+    }
 
     materialsToLoad.forEach(matData => addMaterialFormRow(matData));
 
@@ -951,7 +1076,11 @@ function addTargetFishFormCard(fishData = null, isFirstRequired = false) {
     fishCard.className = "fish-form-card";
     const uniqueId = Date.now() + "_" + index;
 
-    fishCard.innerHTML = `
+        const initialIsImg = isImageSource(fishData.icon);
+        const initialIsUrl = initialIsImg && !fishData.icon.startsWith("data:");
+        const initialType = initialIsUrl ? "url" : (initialIsImg ? "upload" : "emoji");
+
+        fishCard.innerHTML = `
         <div class="fish-form-title" style="display:flex; justify-content:space-between; align-items:center;">
             <span>${index === 0 ? "主要寶物魚 (第一隻) *" : `解鎖寶物魚 #${index + 1}`}</span>
             <button type="button" class="btn btn-sm btn-danger btn-del-target-fish" title="刪除此目標魚" style="padding: 1px 6px; font-size: 0.75rem;">✕ 刪除</button>
@@ -970,13 +1099,13 @@ function addTargetFishFormCard(fishData = null, isFirstRequired = false) {
                 <div class="avatar-preview-circle tf-avatar-prev">${renderAvatarHTML(fishData.icon, index === 0 ? '👑' : '🐟')}</div>
                 <div class="avatar-input-controls">
                     <div class="radio-row">
-                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="emoji" checked> Emoji</label>
-                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="upload"> 上傳圖片</label>
-                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="url"> 網址</label>
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="emoji" ${initialType === 'emoji' ? 'checked' : ''}> Emoji</label>
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="upload" ${initialType === 'upload' ? 'checked' : ''}> 上傳圖片</label>
+                        <label><input type="radio" name="tf-avatar-type-${uniqueId}" value="url" ${initialType === 'url' ? 'checked' : ''}> 網址</label>
                     </div>
-                    <input type="text" class="tf-icon-emoji-in" placeholder="輸入 Emoji" value="${isImageSource(fishData.icon) ? '' : (fishData.icon || (index === 0 ? '👑' : '🐟'))}">
-                    <input type="file" class="tf-file-upload-in" accept="image/*" style="display: none;">
-                    <input type="text" class="tf-icon-url-in" placeholder="圖片網址 (https://...)" value="${isImageSource(fishData.icon) && !fishData.icon.startsWith('data:') ? fishData.icon : ''}" style="display: none;">
+                    <input type="text" class="tf-icon-emoji-in" placeholder="輸入 Emoji" value="${!initialIsImg ? (fishData.icon || (index === 0 ? '👑' : '🐟')) : ''}" style="${initialType === 'emoji' ? 'display:block;' : 'display:none;'}">
+                    <input type="file" class="tf-file-upload-in" accept="image/*" style="${initialType === 'upload' ? 'display:block;' : 'display:none;'}">
+                    <input type="text" class="tf-icon-url-in" placeholder="圖片網址 (https://...)" value="${initialIsUrl ? fishData.icon : ''}" style="${initialType === 'url' ? 'display:block;' : 'display:none;'}">
                 </div>
             </div>
         </div>
@@ -1046,8 +1175,18 @@ function addTargetFishFormCard(fishData = null, isFirstRequired = false) {
         updateTargetFishBadges();
     });
 
-    // Store reference to current avatar on card element for easy retrieval
-    fishCard.getCurrentAvatar = () => currentAvatar;
+    fishCard.getCurrentAvatar = () => {
+        const checkedRadio = fishCard.querySelector(`input[name='tf-avatar-type-${uniqueId}']:checked`);
+        const type = checkedRadio ? checkedRadio.value : "emoji";
+        if (type === "url" && urlIn.value.trim()) {
+            return urlIn.value.trim();
+        } else if (type === "upload" && currentAvatar && isImageSource(currentAvatar)) {
+            return currentAvatar;
+        } else if (type === "emoji" && emojiIn.value.trim()) {
+            return emojiIn.value.trim();
+        }
+        return currentAvatar || (index === 0 ? "👑" : "🐟");
+    };
 
     updateTargetFishBadges();
 }
@@ -1069,11 +1208,12 @@ function updateMaterialBadges() {
 function addMaterialFormRow(matData = null) {
     const currentCount = materialsFormContainer.querySelectorAll(".mat-input-card").length;
     const index = currentCount;
+    const defaultQtys = [25, 15, 25, 25, 20, 15, 30, 20, 30];
     if (!matData) {
         matData = {
             name: `材料魚 ${index + 1}`,
             treasure: `材料魚 ${index + 1}寶石`,
-            qty: 25,
+            qty: defaultQtys[index] || 25,
             icon: "🐟"
         };
     }
@@ -1280,7 +1420,7 @@ function getAllExistingFishOptions() {
     treasureFishList.forEach(tf => {
         if (tf.fishes && Array.isArray(tf.fishes)) {
             tf.fishes.forEach(f => {
-                if (f && f.name && !map.has(f.name)) {
+                if (f && f.name && !f.name.startsWith("材料魚") && !f.name.startsWith("解鎖寶物魚") && !map.has(f.name)) {
                     map.set(f.name, {
                         name: f.name,
                         treasure: f.rewardTreasure || `${f.name}寶石`,
@@ -1291,7 +1431,7 @@ function getAllExistingFishOptions() {
         }
         if (tf.materials && Array.isArray(tf.materials)) {
             tf.materials.forEach(m => {
-                if (m && m.name && !map.has(m.name)) {
+                if (m && m.name && !m.name.startsWith("材料魚") && !map.has(m.name)) {
                     map.set(m.name, {
                         name: m.name,
                         treasure: m.treasure || `${m.name}寶石`,
@@ -1355,7 +1495,34 @@ function handleFormSubmit(e) {
     if (id) {
         const idx = treasureFishList.findIndex(t => t.id === id);
         if (idx !== -1) {
-            treasureFishList[idx] = { id, yieldType, fishes, materials };
+            const oldItem = treasureFishList[idx];
+
+            // Global Cascade Update: Check if target fish names or material names/treasures changed
+            if (oldItem.fishes && fishes) {
+                oldItem.fishes.forEach((oldF, i) => {
+                    const newF = fishes[i];
+                    if (newF && oldF.name !== newF.name && oldF.name) {
+                        cascadeUpdateFishName(oldF.name, newF.name);
+                    }
+                    if (newF && oldF.rewardTreasure !== newF.rewardTreasure && oldF.rewardTreasure) {
+                        cascadeUpdateTreasureName(oldF.rewardTreasure, newF.rewardTreasure);
+                    }
+                });
+            }
+
+            if (oldItem.materials && materials) {
+                oldItem.materials.forEach((oldM, i) => {
+                    const newM = materials[i];
+                    if (newM && oldM.name !== newM.name && oldM.name) {
+                        cascadeUpdateFishName(oldM.name, newM.name);
+                    }
+                    if (newM && oldM.treasure !== newM.treasure && oldM.treasure) {
+                        cascadeUpdateTreasureName(oldM.treasure, newM.treasure);
+                    }
+                });
+            }
+
+            treasureFishList[idx] = { ...oldItem, id, yieldType, fishes, materials };
         }
     } else {
         const newTf = {
@@ -1367,9 +1534,57 @@ function handleFormSubmit(e) {
         treasureFishList.unshift(newTf); // Insert at top (#1 position)
     }
 
+    syncFriendsToTreasureFishLocations();
+    saveFriendsData();
     saveData();
     closeFormModal();
     render();
+}
+
+// Cascade Update Fish Name across all recipes & friends list
+function cascadeUpdateFishName(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+
+    // 1. Update target fishes and material fishes across all recipes
+    treasureFishList.forEach(tf => {
+        if (tf.fishes) {
+            tf.fishes.forEach(f => {
+                if (f.name === oldName) f.name = newName;
+            });
+        }
+        if (tf.materials) {
+            tf.materials.forEach(m => {
+                if (m.name === oldName) m.name = newName;
+            });
+        }
+    });
+
+    // 2. Update friendsList tank fish names
+    friendsList.forEach(friend => {
+        (friend.tanks || []).forEach(tank => {
+            if (tank.fishes) {
+                tank.fishes = tank.fishes.map(fName => fName === oldName ? newName : fName);
+            }
+        });
+    });
+}
+
+// Cascade Update Treasure Name across all recipes
+function cascadeUpdateTreasureName(oldTreasure, newTreasure) {
+    if (!oldTreasure || !newTreasure || oldTreasure === newTreasure) return;
+
+    treasureFishList.forEach(tf => {
+        if (tf.fishes) {
+            tf.fishes.forEach(f => {
+                if (f.rewardTreasure === oldTreasure) f.rewardTreasure = newTreasure;
+            });
+        }
+        if (tf.materials) {
+            tf.materials.forEach(m => {
+                if (m.treasure === oldTreasure) m.treasure = newTreasure;
+            });
+        }
+    });
 }
 
 function deleteTreasureFish(id) {
@@ -1416,3 +1631,423 @@ function importData(e) {
     };
     reader.readAsText(file);
 }
+
+// ==========================================
+// 👥 好友魚缸簿與摸魚地點 雙向連動邏輯 (Option C)
+// ==========================================
+
+function renderFriendsView() {
+    const container = document.getElementById("friends-cards-container");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const searchKeyword = currentSearch.toLowerCase();
+    const filteredFriends = friendsList.filter(fr => {
+        const nameMatch = fr.name.toLowerCase().includes(searchKeyword);
+        const fishMatch = (fr.tanks || []).some(t => 
+            (t.fishes || []).some(f => f.toLowerCase().includes(searchKeyword))
+        );
+        return nameMatch || fishMatch;
+    });
+
+    if (filteredFriends.length === 0) {
+        container.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 50px 20px; color: var(--text-muted); background: var(--bg-card); border: 1px dashed var(--border-color); border-radius: var(--radius-md);">
+                <p style="font-size: 1.3rem; font-weight: 600; color: var(--text-main); margin-bottom: 8px;">尚無好友魚缸資料 👥</p>
+                <p style="font-size: 0.9rem; margin-bottom: 20px;">點擊「新增好友與魚缸」按鈕，開始登記好友與他們的魚缸！</p>
+                <button class="btn btn-primary" onclick="openFriendFormModal()">+ 立即新增好友與魚缸</button>
+            </div>
+        `;
+        return;
+    }
+
+    const allExistingFishList = getAllExistingFishOptions();
+
+    filteredFriends.forEach(friend => {
+        const card = document.createElement("div");
+        card.className = "friend-card";
+
+        let tanksHTML = (friend.tanks || []).map(tank => {
+            // Group duplicate fish names in the same tank (e.g., 炫紫時光雞 x3)
+            const fishCountMap = new Map();
+            (tank.fishes || []).forEach(fishName => {
+                fishCountMap.set(fishName, (fishCountMap.get(fishName) || 0) + 1);
+            });
+
+            const fishTagsHTML = Array.from(fishCountMap.entries()).map(([fishName, count]) => {
+                const fishObj = allExistingFishList.find(f => f.name === fishName);
+                const icon = fishObj ? fishObj.icon : "🐠";
+                const countBadge = count > 1 ? `<span style="background:var(--primary); color:#000; font-weight:bold; font-size:0.7rem; padding:1px 5px; border-radius:10px; margin-left:4px;">x${count}</span>` : '';
+                return `
+                    <span class="tank-fish-tag">
+                        ${renderAvatarHTML(icon, '🐠')} ${fishName} ${countBadge}
+                    </span>
+                `;
+            }).join("");
+
+            const totalCount = (tank.fishes || []).length;
+            return `
+                <div class="tank-item">
+                    <div class="tank-title">
+                        <span>水族缸 #${tank.tankNo}</span>
+                        <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">共 ${totalCount} 隻 (包含 ${fishCountMap.size} 種)</span>
+                    </div>
+                    <div class="tank-fish-tags">
+                        ${fishTagsHTML || '<span style="color:var(--text-muted); font-size:0.8rem;">(空魚缸)</span>'}
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        card.innerHTML = `
+            <div class="friend-card-header">
+                <div class="friend-name">
+                    <span>👤</span> ${friend.name}
+                </div>
+                <div style="display:flex; gap:6px;">
+                    <button class="btn btn-sm btn-secondary btn-edit-friend" data-id="${friend.id}">✏️ 編輯</button>
+                    <button class="btn btn-sm btn-danger btn-delete-friend" data-id="${friend.id}">🗑️</button>
+                </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                ${tanksHTML || '<p style="color:var(--text-muted); font-size:0.85rem;">尚無魚缸紀錄</p>'}
+            </div>
+        `;
+
+        card.querySelector(".btn-edit-friend").addEventListener("click", () => openFriendFormModal(friend.id));
+        card.querySelector(".btn-delete-friend").addEventListener("click", () => deleteFriend(friend.id));
+
+        container.appendChild(card);
+    });
+}
+
+// Manage Friends Modal
+const modalFriendForm = document.getElementById("modal-friend-form");
+const friendForm = document.getElementById("friend-form");
+const friendTanksContainer = document.getElementById("friend-tanks-container");
+
+function openFriendFormModal(friendId = null) {
+    document.getElementById("friend-form-id").value = friendId || "";
+    document.getElementById("friend-modal-title").textContent = friendId ? "✏️ 編輯好友魚缸紀錄" : "👤 新增好友魚缸紀錄";
+    friendTanksContainer.innerHTML = "";
+
+    let friendData = null;
+    if (friendId) {
+        friendData = friendsList.find(f => f.id === friendId);
+    }
+
+    document.getElementById("friend-name-input").value = friendData ? friendData.name : "";
+
+    const tanks = (friendData && friendData.tanks && friendData.tanks.length > 0) 
+        ? friendData.tanks 
+        : [{ tankNo: 1, fishes: [] }, { tankNo: 2, fishes: [] }];
+
+    tanks.forEach(tank => addTankRow(tank.tankNo, tank.fishes));
+
+    modalFriendForm.classList.add("active");
+}
+
+function closeFriendFormModal() {
+    modalFriendForm.classList.remove("active");
+}
+
+function addTankRow(tankNo = null, initialFishes = []) {
+    const existingRows = friendTanksContainer.querySelectorAll(".friend-tank-row");
+    const actualTankNo = tankNo || (existingRows.length + 1);
+
+    const row = document.createElement("div");
+    row.className = "friend-tank-row";
+    row.style.cssText = "background:rgba(0,0,0,0.25); padding:10px; border-radius:var(--radius-sm); border:1px solid var(--border-color); display:flex; flex-direction:column; gap:8px;";
+
+    const allFishOptions = getAllExistingFishOptions();
+    const optionsHTML = allFishOptions.map(f => {
+        return `<option value="${f.name}"></option>`;
+    }).join("");
+
+    row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:600; color:var(--primary); font-size:0.9rem;">第 <input type="number" class="tank-no-input" value="${actualTankNo}" style="width:45px; padding:2px 4px; background:var(--bg-dark); border:1px solid var(--border-color); color:var(--text-main); border-radius:4px; text-align:center;"> 缸</span>
+            <button type="button" class="btn btn-sm btn-danger btn-remove-tank" style="padding:2px 6px;">✕ 刪除缸</button>
+        </div>
+        <div class="tank-fish-select-container" style="display:flex; flex-direction:column; gap:6px;">
+            <!-- Select rows -->
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary btn-add-fish-to-tank" style="font-size:0.8rem;">+ 新增養殖魚隻</button>
+    `;
+
+    const fishSelectContainer = row.querySelector(".tank-fish-select-container");
+    const addFishBtn = row.querySelector(".btn-add-fish-to-tank");
+
+    const addFishSelectRow = (selectedFishName = "") => {
+        const selectRow = document.createElement("div");
+        selectRow.style.cssText = "display:flex; gap:6px; align-items:center; position:relative;";
+        selectRow.innerHTML = `
+            <input type="text" class="tank-fish-select" value="${selectedFishName}" placeholder="選擇或輸入魚隻名稱..." style="flex:1; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px;">
+            <button type="button" class="btn btn-sm btn-danger btn-remove-fish-select" style="padding:2px 6px;">✕</button>
+            <div class="mat-suggestions-popup"></div>
+        `;
+
+        const fishInput = selectRow.querySelector(".tank-fish-select");
+        const popupDiv = selectRow.querySelector(".mat-suggestions-popup");
+
+        function hidePopup() {
+            popupDiv.classList.remove("active");
+            popupDiv.innerHTML = "";
+        }
+
+        function showSuggestions(query) {
+            const trimmed = query.toLowerCase().trim();
+            const existingFishes = getAllExistingFishOptions();
+            const matches = trimmed 
+                ? existingFishes.filter(item => item.name.toLowerCase().includes(trimmed))
+                : existingFishes;
+
+            if (matches.length === 0) {
+                hidePopup();
+                return;
+            }
+
+            popupDiv.innerHTML = matches.map(item => `
+                <div class="suggestion-item" data-name="${item.name}">
+                    <div class="suggestion-avatar">${renderAvatarHTML(item.icon, '🐟')}</div>
+                    <div class="suggestion-info">
+                        <span class="suggestion-name">${item.name}</span>
+                    </div>
+                </div>
+            `).join("");
+
+            popupDiv.querySelectorAll(".suggestion-item").forEach(itemEl => {
+                itemEl.addEventListener("mousedown", (evt) => {
+                    evt.preventDefault();
+                    fishInput.value = itemEl.dataset.name;
+                    hidePopup();
+                });
+            });
+
+            popupDiv.classList.add("active");
+        }
+
+        fishInput.addEventListener("input", (e) => showSuggestions(e.target.value));
+        fishInput.addEventListener("focus", (e) => showSuggestions(e.target.value));
+        fishInput.addEventListener("blur", () => setTimeout(hidePopup, 200));
+
+        selectRow.querySelector(".btn-remove-fish-select").addEventListener("click", () => selectRow.remove());
+        fishSelectContainer.appendChild(selectRow);
+    };
+
+    initialFishes.forEach(fName => addFishSelectRow(fName));
+
+    addFishBtn.addEventListener("click", () => addFishSelectRow());
+    row.querySelector(".btn-remove-tank").addEventListener("click", () => row.remove());
+
+    friendTanksContainer.appendChild(row);
+}
+
+function handleFriendFormSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById("friend-form-id").value;
+    const name = document.getElementById("friend-name-input").value.trim();
+    if (!name) return;
+
+    const tankRows = friendTanksContainer.querySelectorAll(".friend-tank-row");
+    const tanks = [];
+
+    tankRows.forEach(row => {
+        const tankNo = parseInt(row.querySelector(".tank-no-input").value, 10) || (tanks.length + 1);
+        const selects = row.querySelectorAll(".tank-fish-select");
+        const fishes = [];
+        selects.forEach(s => {
+            if (s.value) fishes.push(s.value);
+        });
+        tanks.push({ tankNo, fishes });
+    });
+
+    if (id) {
+        const idx = friendsList.findIndex(f => f.id === id);
+        if (idx !== -1) {
+            friendsList[idx] = { id, name, tanks };
+        }
+    } else {
+        friendsList.push({
+            id: "fr_" + Date.now(),
+            name,
+            tanks
+        });
+    }
+
+    // Sync locations back into treasureFishList for Option C bi-directional link
+    syncFriendsToTreasureFishLocations();
+
+    saveFriendsData();
+    saveData();
+    closeFriendFormModal();
+    render();
+}
+
+function deleteFriend(id) {
+    const friend = friendsList.find(f => f.id === id);
+    if (!friend) return;
+
+    if (confirm(`確定要刪除好友【${friend.name}】的魚缸紀錄嗎？`)) {
+        friendsList = friendsList.filter(f => f.id !== id);
+        syncFriendsToTreasureFishLocations();
+        saveFriendsData();
+        saveData();
+        render();
+    }
+}
+
+// Bi-directional Link Sync: Update treasureFishList[].locations and materials locations based on friendsList
+function syncFriendsToTreasureFishLocations() {
+    // 1. Clear existing locations in treasureFishList & material locations
+    treasureFishList.forEach(tf => {
+        tf.locations = [];
+        (tf.materials || []).forEach(m => {
+            m.locations = [];
+        });
+    });
+
+    // 2. Iterate friendsList and push to corresponding treasure fish & materials
+    friendsList.forEach(friend => {
+        (friend.tanks || []).forEach(tank => {
+            (tank.fishes || []).forEach(fishName => {
+                // Find matching target treasure fish item
+                const matchedTf = treasureFishList.find(tf => 
+                    tf.fishes.some(f => f.name === fishName) || tf.name === fishName
+                );
+                if (matchedTf) {
+                    if (!matchedTf.locations) matchedTf.locations = [];
+                    const exists = matchedTf.locations.some(l => l.friend === friend.name && l.tank === tank.tankNo);
+                    if (!exists) {
+                        matchedTf.locations.push({ friend: friend.name, tank: tank.tankNo });
+                    }
+                }
+
+                // Also find matching material fish items across recipes
+                treasureFishList.forEach(tf => {
+                    (tf.materials || []).forEach(m => {
+                        if (m.name === fishName) {
+                            if (!m.locations) m.locations = [];
+                            const exists = m.locations.some(l => l.friend === friend.name && l.tank === tank.tankNo);
+                            if (!exists) {
+                                m.locations.push({ friend: friend.name, tank: tank.tankNo });
+                            }
+                        }
+                    });
+                });
+            });
+        });
+    });
+}
+
+// Modal Quick Edit Location on Fish Card
+const modalFishLocation = document.getElementById("modal-fish-location");
+const fishLocationRowsContainer = document.getElementById("fish-location-rows-container");
+
+function openFishLocationModal(fishName) {
+    document.getElementById("fish-location-target-name").value = fishName;
+    document.getElementById("fish-location-modal-title").textContent = `📍 管理【${fishName}】的好友摸魚點`;
+    fishLocationRowsContainer.innerHTML = "";
+
+    // Find current locations for this fish
+    const targetTf = treasureFishList.find(tf => tf.fishes.some(f => f.name === fishName) || tf.name === fishName);
+    const locations = targetTf ? (targetTf.locations || []) : [];
+
+    locations.forEach(loc => addFishLocationRow(loc.friend, loc.tank));
+    if (locations.length === 0) {
+        addFishLocationRow("", 1);
+    }
+
+    modalFishLocation.classList.add("active");
+}
+
+function closeFishLocationModal() {
+    modalFishLocation.classList.remove("active");
+}
+
+function addFishLocationRow(friendName = "", tankNo = 1) {
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; gap:8px; align-items:center; background:rgba(0,0,0,0.2); padding:8px; border-radius:6px; border:1px solid var(--border-color);";
+
+    let friendOptionsHTML = friendsList.map(fr => `<option value="${fr.name}">${fr.name}</option>`).join("");
+
+    row.innerHTML = `
+        <div style="flex:1;">
+            <input type="text" list="existing-friends-list" class="loc-friend-input" value="${friendName}" placeholder="好友名字 (例如：小明)" style="width:100%; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px;">
+            <datalist id="existing-friends-list">
+                ${friendOptionsHTML}
+            </datalist>
+        </div>
+        <div style="display:flex; align-items:center; gap:4px;">
+            <span style="font-size:0.85rem; color:var(--text-muted);">第</span>
+            <input type="number" class="loc-tank-input" min="1" max="99" value="${tankNo}" style="width:50px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px; text-align:center;">
+            <span style="font-size:0.85rem; color:var(--text-muted);">缸</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-danger btn-remove-loc-row" style="padding:6px 10px;">✕</button>
+    `;
+
+    row.querySelector(".btn-remove-loc-row").addEventListener("click", () => row.remove());
+    fishLocationRowsContainer.appendChild(row);
+}
+
+function saveFishLocationChanges() {
+    const fishName = document.getElementById("fish-location-target-name").value;
+    const rows = fishLocationRowsContainer.querySelectorAll("div[style*='display:flex']");
+
+    const newLocations = [];
+    rows.forEach(r => {
+        const friendInput = r.querySelector(".loc-friend-input");
+        const tankInput = r.querySelector(".loc-tank-input");
+        if (friendInput && friendInput.value.trim()) {
+            const friend = friendInput.value.trim();
+            const tank = parseInt(tankInput.value, 10) || 1;
+            newLocations.push({ friend, tank });
+        }
+    });
+
+    // Update target fish locations
+    const targetTf = treasureFishList.find(tf => tf.fishes.some(f => f.name === fishName) || tf.name === fishName);
+    if (targetTf) {
+        targetTf.locations = newLocations;
+    }
+
+    // Sync to friendsList
+    newLocations.forEach(loc => {
+        let fr = friendsList.find(f => f.name === loc.friend);
+        if (!fr) {
+            fr = { id: "fr_" + Date.now() + "_" + Math.random().toString(36).substr(2,4), name: loc.friend, tanks: [] };
+            friendsList.push(fr);
+        }
+        let tank = fr.tanks.find(t => t.tankNo === loc.tank);
+        if (!tank) {
+            tank = { tankNo: loc.tank, fishes: [] };
+            fr.tanks.push(tank);
+        }
+        if (!tank.fishes.includes(fishName)) {
+            tank.fishes.push(fishName);
+        }
+    });
+
+    saveFriendsData();
+    saveData();
+    closeFishLocationModal();
+    render();
+}
+
+// Bind Friends & Location Modal Triggers
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("btn-open-friends-modal")?.addEventListener("click", () => {
+        setViewMode("friends");
+    });
+    document.getElementById("btn-add-friend")?.addEventListener("click", () => openFriendFormModal());
+    document.getElementById("modal-friend-close")?.addEventListener("click", closeFriendFormModal);
+    document.getElementById("btn-cancel-friend-form")?.addEventListener("click", closeFriendFormModal);
+    document.getElementById("btn-add-tank-row")?.addEventListener("click", () => addTankRow());
+    friendForm?.addEventListener("submit", handleFriendFormSubmit);
+
+    document.getElementById("modal-fish-location-close")?.addEventListener("click", closeFishLocationModal);
+    document.getElementById("btn-cancel-fish-location")?.addEventListener("click", closeFishLocationModal);
+    document.getElementById("btn-add-location-row")?.addEventListener("click", () => addFishLocationRow());
+    document.getElementById("btn-save-fish-location")?.addEventListener("click", saveFishLocationChanges);
+});
+
