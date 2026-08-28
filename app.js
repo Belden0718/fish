@@ -1699,20 +1699,43 @@ function renderFriendsView() {
             `;
         }).join("");
 
+        const totalTanks = (friend.tanks || []).length;
+        let totalFishCount = 0;
+        (friend.tanks || []).forEach(t => { totalFishCount += (t.fishes || []).length; });
+
         card.innerHTML = `
-            <div class="friend-card-header">
+            <div class="friend-card-header" style="cursor:pointer;" title="點擊展開/收起魚缸列表">
                 <div class="friend-name">
+                    <span class="friend-toggle-icon" style="transition: transform 0.2s ease; display:inline-block; font-size:0.9rem;">▶</span>
                     <span>👤</span> ${friend.name}
+                    <span class="friend-summary-badge" style="font-size:0.78rem; color:var(--text-muted); font-weight:normal; margin-left:4px;">
+                        (${totalTanks} 個魚缸 / 共 ${totalFishCount} 隻魚)
+                    </span>
                 </div>
-                <div style="display:flex; gap:6px;">
+                <div style="display:flex; gap:6px;" onclick="event.stopPropagation();">
                     <button class="btn btn-sm btn-secondary btn-edit-friend" data-id="${friend.id}">✏️ 編輯</button>
                     <button class="btn btn-sm btn-danger btn-delete-friend" data-id="${friend.id}">🗑️</button>
                 </div>
             </div>
-            <div style="display:flex; flex-direction:column; gap:8px;">
+            <div class="friend-tanks-collapsible" style="display:none; flex-direction:column; gap:8px; margin-top:8px;">
                 ${tanksHTML || '<p style="color:var(--text-muted); font-size:0.85rem;">尚無魚缸紀錄</p>'}
             </div>
         `;
+
+        const headerEl = card.querySelector(".friend-card-header");
+        const bodyEl = card.querySelector(".friend-tanks-collapsible");
+        const iconEl = card.querySelector(".friend-toggle-icon");
+
+        headerEl.addEventListener("click", () => {
+            const isHidden = bodyEl.style.display === "none";
+            if (isHidden) {
+                bodyEl.style.display = "flex";
+                iconEl.style.transform = "rotate(90deg)";
+            } else {
+                bodyEl.style.display = "none";
+                iconEl.style.transform = "rotate(0deg)";
+            }
+        });
 
         card.querySelector(".btn-edit-friend").addEventListener("click", () => openFriendFormModal(friend.id));
         card.querySelector(".btn-delete-friend").addEventListener("click", () => deleteFriend(friend.id));
