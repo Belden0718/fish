@@ -227,24 +227,33 @@ function updateAdminVisibility() {
 function setupUserSync() {
     if (!currentUser || !userFriendsDbRef) return;
 
-    // 1. User Friends List Listener
+    // 1. User Friends List Listener & Migration
     userFriendsDbRef.on('value', (snapshot) => {
         const data = snapshot.val();
+        let loaded = [];
         if (data && Array.isArray(data)) {
-            friendsList = data;
+            loaded = data;
         } else if (data && typeof data === 'object') {
-            friendsList = Object.values(data);
+            loaded = Object.values(data);
+        }
+
+        if (loaded.length > 0) {
+            friendsList = loaded;
+            render();
         } else {
+            // Check local storage first
             loadFriendsFromLocal();
             if (friendsList.length > 0) {
                 saveFriendsData();
+                render();
             } else {
-                // Legacy Root Node Fallback Migration
+                // Fetch legacy root 'friendsList' from Firebase
                 db.ref('friendsList').once('value').then((rootSnap) => {
                     const rootData = rootSnap.val();
                     if (rootData) {
-                        friendsList = Array.isArray(rootData) ? rootData : Object.values(rootData);
-                        if (friendsList.length > 0) {
+                        const legacyArr = Array.isArray(rootData) ? rootData : Object.values(rootData);
+                        if (legacyArr.length > 0) {
+                            friendsList = legacyArr;
                             saveFriendsData();
                             render();
                         }
@@ -252,19 +261,17 @@ function setupUserSync() {
                 }).catch(err => console.error("Legacy root friends list migration failed", err));
             }
         }
-        render();
     });
-
 
     // 2. User Missing Stamps Listener
     if (userMissingDbRef) {
         userMissingDbRef.on('value', (snapshot) => {
             const data = snapshot.val();
-            if (Array.isArray(data)) {
+            if (Array.isArray(data) && data.length > 0) {
                 missingFishSet = new Set(data);
             } else {
                 loadMissingSetFromLocal();
-                if (missingFishSet.size > 0) {
+                if (missingFishSet.size > 0 && currentUser && userMissingDbRef) {
                     saveMissingSet();
                 }
             }
@@ -272,6 +279,7 @@ function setupUserSync() {
         });
     }
 }
+
 
 function loadFriendsFromLocal() {
     const savedFriends = localStorage.getItem("aqua_fish_friends_db");
