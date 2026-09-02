@@ -14,7 +14,17 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const dbRef = db.ref('treasureFishList');
-const friendsDbRef = db.ref('friendsList');
+
+// Admin / Owner Email Configuration
+const OWNER_EMAILS = [
+    "s634s634s634@gmail.com"
+];
+
+// Global Auth & User References State
+let currentUser = null;
+let isOwner = false;
+let userFriendsDbRef = null;
+let userMissingDbRef = null;
 
 // Image Compressor & Helper Utility
 function compressImageFile(file, maxWidth = 250, maxHeight = 250, quality = 0.85) {
@@ -62,6 +72,31 @@ let friendsList = []; // Array of { id, name, tanks: [{ tankNo: 1, fishes: ["魚
 let tempReorderList = []; // Scratch array for reorder modal state
 let currentSearch = "";
 let currentViewMode = "cards"; // 'cards' | 'friends' | 'analytics' | 'table'
+let filterOnlyMissing = false;
+
+// Missing Fish Stamp State (Set of fish names or material names)
+let missingFishSet = new Set(JSON.parse(localStorage.getItem("aqua_fish_missing_set") || "[]"));
+
+function saveMissingSet() {
+    const missingArr = Array.from(missingFishSet);
+    localStorage.setItem("aqua_fish_missing_set", JSON.stringify(missingArr));
+    if (currentUser && userMissingDbRef) {
+        userMissingDbRef.set(missingArr).catch(err => {
+            console.error("Firebase user missing set save failed", err);
+        });
+    }
+}
+
+function toggleMissingFish(name) {
+    if (!name) return;
+    if (missingFishSet.has(name)) {
+        missingFishSet.delete(name);
+    } else {
+        missingFishSet.add(name);
+    }
+    saveMissingSet();
+    render();
+}
 
 // Temporary Avatar State in Form
 let currentTfAvatarVal = "👑";
@@ -111,11 +146,130 @@ const usageModalSubtitle = document.getElementById("usage-modal-subtitle");
 const usageItemsList = document.getElementById("usage-items-list");
 
 document.addEventListener("DOMContentLoaded", () => {
+    setupAuth();
     setupFirebaseSync();
     setupEventListeners();
 });
 
-// Setup Firebase Realtime Listener
+// Setup Google Authentication Listener
+function setupAuth() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    
+    const btnLogin = document.getElementById("btn-google-login");
+    const btnLogout = document.getElementById("btn-google-logout");
+    const userProfile = document.getElementById("user-profile");
+    const userAvatar = document.getElementById("user-avatar");
+    const userName = document.getElementById("user-name");
+    const ownerBadge = document.getElementById("owner-badge");
+
+    if (btnLogin) {
+        btnLogin.addEventListener("click", () => {
+            firebase.auth().signInWithPopup(provider).catch(err => {
+                console.error("Google 登入失敗", err);
+                alert("Google 登入失敗: " + err.message);
+            });
+        });
+    }
+
+    if (btnLogout) {
+        btnLogout.addEventListener("click", () => {
+            firebase.auth().signOut();
+        });
+    }
+
+    firebase.auth().onAuthStateChanged((user) => {
+        currentUser = user;
+        if (user) {
+            const userEmail = (user.email || "").toLowerCase();
+            isOwner = OWNER_EMAILS.some(e => e.toLowerCase() === userEmail);
+            
+            if (btnLogin) btnLogin.style.display = "none";
+            if (userProfile) userProfile.style.display = "flex";
+            if (userAvatar) userAvatar.src = user.photoURL || "favicon.png";
+            if (userName) userName.textContent = user.displayName || userEmail.split("@")[0];
+            if (ownerBadge) ownerBadge.style.display = isOwner ? "inline-block" : "none";
+
+            // Bind User Specific References
+            userFriendsDbRef = db.ref(`users/${user.uid}/friendsList`);
+            userMissingDbRef = db.ref(`users/${user.uid}/missingFishSet`);
+            
+            setupUserSync();
+        } else {
+            isOwner = false;
+            if (btnLogin) btnLogin.style.display = "inline-flex";
+            if (userProfile) userProfile.style.display = "none";
+            if (ownerBadge) ownerBadge.style.display = "none";
+            
+            userFriendsDbRef = null;
+            userMissingDbRef = null;
+            
+            // Fallback to localStorage for guests
+            loadFriendsFromLocal();
+            loadMissingSetFromLocal();
+        }
+        
+        updateAdminVisibility();
+        render();
+    });
+}
+
+function updateAdminVisibility() {
+    const adminElements = document.querySelectorAll(".admin-only-hidden");
+    adminElements.forEach(el => {
+        if (isOwner) {
+            el.classList.remove("admin-only-hidden");
+        } else {
+            el.classList.add("admin-only-hidden");
+        }
+    });
+}
+
+function setupUserSync() {
+    if (!currentUser || !userFriendsDbRef) return;
+
+    // 1. User Friends List Listener
+    userFriendsDbRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data && Array.isArray(data)) {
+            friendsList = data;
+        } else if (data && typeof data === 'object') {
+            friendsList = Object.values(data);
+        } else {
+            loadFriendsFromLocal();
+            if (friendsList.length > 0) {
+                saveFriendsData();
+            }
+        }
+        render();
+    });
+
+    // 2. User Missing Stamps Listener
+    if (userMissingDbRef) {
+        userMissingDbRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (Array.isArray(data)) {
+                missingFishSet = new Set(data);
+            } else {
+                loadMissingSetFromLocal();
+                if (missingFishSet.size > 0) {
+                    saveMissingSet();
+                }
+            }
+            render();
+        });
+    }
+}
+
+function loadFriendsFromLocal() {
+    const savedFriends = localStorage.getItem("aqua_fish_friends_db");
+    friendsList = savedFriends ? (JSON.parse(savedFriends) || []) : [];
+}
+
+function loadMissingSetFromLocal() {
+    missingFishSet = new Set(JSON.parse(localStorage.getItem("aqua_fish_missing_set") || "[]"));
+}
+
+// Setup Firebase Realtime Listener for Global Treasure Catalog
 function setupFirebaseSync() {
     dbRef.on('value', (snapshot) => {
         const data = snapshot.val();
@@ -136,23 +290,12 @@ function setupFirebaseSync() {
         render();
     });
 
-    friendsDbRef.on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data && Array.isArray(data)) {
-            friendsList = data;
-        } else if (data && typeof data === 'object') {
-            friendsList = Object.values(data);
-        } else {
-            const savedFriends = localStorage.getItem("aqua_fish_friends_db");
-            friendsList = savedFriends ? (JSON.parse(savedFriends) || []) : [];
-        }
-        render();
-    }, (error) => {
-        const savedFriends = localStorage.getItem("aqua_fish_friends_db");
-        friendsList = savedFriends ? (JSON.parse(savedFriends) || []) : [];
-        render();
-    });
+    // Initial guest load for friendsList
+    if (!currentUser) {
+        loadFriendsFromLocal();
+    }
 }
+
 
 async function seedInitialDataFromLocal() {
     try {
@@ -241,6 +384,10 @@ function normalizeData() {
 
 // Save data to Firebase (Global Sync) + localStorage backup
 function saveData() {
+    if (!isOwner) {
+        console.warn("Only owner can modify global treasure fish list");
+        return;
+    }
     // 1. Sync to Firebase Cloud
     dbRef.set(treasureFishList).catch(err => {
         console.error("Firebase save failed", err);
@@ -251,11 +398,14 @@ function saveData() {
 }
 
 function saveFriendsData() {
-    friendsDbRef.set(friendsList).catch(err => {
-        console.error("Firebase friends save failed", err);
-    });
     localStorage.setItem("aqua_fish_friends_db", JSON.stringify(friendsList));
+    if (currentUser && userFriendsDbRef) {
+        userFriendsDbRef.set(friendsList).catch(err => {
+            console.error("Firebase user friends save failed", err);
+        });
+    }
 }
+
 
 function setupEventListeners() {
     searchInput.addEventListener("input", (e) => {
@@ -264,6 +414,7 @@ function setupEventListeners() {
     });
 
     document.getElementById("view-mode-cards").addEventListener("click", () => setViewMode("cards"));
+    document.getElementById("view-mode-missing")?.addEventListener("click", () => setViewMode("missing"));
     document.getElementById("view-mode-friends")?.addEventListener("click", () => setViewMode("friends"));
     document.getElementById("view-mode-analytics").addEventListener("click", () => setViewMode("analytics"));
     document.getElementById("view-mode-table").addEventListener("click", () => setViewMode("table"));
@@ -343,6 +494,9 @@ function setViewMode(mode) {
     if (mode === "cards") {
         document.getElementById("view-mode-cards").classList.add("active");
         document.getElementById("cards-view").classList.add("active");
+    } else if (mode === "missing") {
+        document.getElementById("view-mode-missing")?.classList.add("active");
+        document.getElementById("missing-view")?.classList.add("active");
     } else if (mode === "friends") {
         document.getElementById("view-mode-friends")?.classList.add("active");
         document.getElementById("friends-view")?.classList.add("active");
@@ -377,6 +531,8 @@ function render() {
 
     if (currentViewMode === "cards") {
         renderCards(filtered);
+    } else if (currentViewMode === "missing") {
+        renderMissingView();
     } else if (currentViewMode === "friends") {
         renderFriendsView();
     } else if (currentViewMode === "analytics") {
@@ -648,7 +804,8 @@ function renderCards(list) {
 
     list.forEach(tf => {
         const card = document.createElement("div");
-        card.className = "treasure-card";
+        const isTargetFishMissing = tf.fishes.some(f => missingFishSet.has(f.name));
+        card.className = `treasure-card ${isTargetFishMissing ? 'is-missing-card' : ''}`;
 
         const globalIndex = treasureFishList.findIndex(t => t.id === tf.id);
         const isFirst = globalIndex === 0;
@@ -665,26 +822,40 @@ function renderCards(list) {
 
         if (tf.fishes.length === 1) {
             const f = tf.fishes[0];
+            const isMissing = missingFishSet.has(f.name);
             fishesContentHTML = `
                 <div class="dual-fish-item">
                     <div class="tf-avatar">${renderAvatarHTML(f.icon, '👑')}</div>
                     <div class="tf-title">
-                        <h3>${f.name}</h3>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <h3>${f.name}</h3>
+                            <button class="btn-toggle-stamp ${isMissing ? 'active' : ''}" data-name="${f.name}">
+                                ${isMissing ? '已標缺' : '+ 缺'}
+                            </button>
+                        </div>
                         <div class="tf-reward">✨ 合成解鎖寶物：【${f.rewardTreasure}】</div>
                     </div>
                 </div>
             `;
         } else {
             const dividerSymbol = (yieldType === "random") ? "or" : "+";
-            const fishesListHTML = tf.fishes.map((f, i) => `
-                <div class="dual-fish-item">
-                    <div class="tf-avatar">${renderAvatarHTML(f.icon, i === 0 ? '👑' : '🐟')}</div>
-                    <div class="tf-title">
-                        <h3>${f.name}</h3>
-                        <div class="tf-reward">✨ 解鎖：【${f.rewardTreasure}】</div>
+            const fishesListHTML = tf.fishes.map((f, i) => {
+                const isMissing = missingFishSet.has(f.name);
+                return `
+                    <div class="dual-fish-item">
+                        <div class="tf-avatar">${renderAvatarHTML(f.icon, i === 0 ? '👑' : '🐟')}</div>
+                        <div class="tf-title">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <h3>${f.name}</h3>
+                                <button class="btn-toggle-stamp ${isMissing ? 'active' : ''}" data-name="${f.name}">
+                                    ${isMissing ? '已標缺' : '+ 缺'}
+                                </button>
+                            </div>
+                            <div class="tf-reward">✨ 解鎖：【${f.rewardTreasure}】</div>
+                        </div>
                     </div>
-                </div>
-            `).join(`<div class="dual-plus-divider">${dividerSymbol}</div>`);
+                `;
+            }).join(`<div class="dual-plus-divider">${dividerSymbol}</div>`);
 
             fishesContentHTML = `
                 <div class="dual-fishes-container">
@@ -699,6 +870,7 @@ function renderCards(list) {
         }
 
         const materialsHTML = tf.materials.map((m, index) => {
+            const isMissingMat = missingFishSet.has(m.name);
             const mLocs = m.locations || [];
             const mFriendMap = new Map();
             mLocs.forEach(loc => {
@@ -711,8 +883,8 @@ function renderCards(list) {
             }).join(" ");
 
             return `
-                <div class="mat-item-box">
-                    <div class="mat-info-left">
+                <div class="mat-item-box ${isMissingMat ? 'is-missing-mat' : ''}">
+                    <div class="mat-info-left btn-edit-mat-location" data-name="${m.name}" style="cursor:pointer;" title="點擊設定【${m.name}】的好友摸魚地點">
                         <div class="mat-icon">${renderAvatarHTML(m.icon, '🐟')}</div>
                         <div>
                             <div class="mat-name">#${index + 1} ${m.name}</div>
@@ -720,7 +892,12 @@ function renderCards(list) {
                             ${mLocStr ? `<div style="font-size:0.72rem; color:var(--primary); margin-top:2px;">📍 摸寶：${mLocStr}</div>` : ''}
                         </div>
                     </div>
-                    <div class="mat-qty">x${m.qty}</div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="btn-toggle-stamp ${isMissingMat ? 'active' : ''}" data-name="${m.name}">
+                            ${isMissingMat ? '已標缺' : '+ 缺'}
+                        </button>
+                        <div class="mat-qty">x${m.qty}</div>
+                    </div>
                 </div>
             `;
         }).join("");
@@ -759,15 +936,17 @@ function renderCards(list) {
                     ${fishesContentHTML}
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;">
-                    <div class="order-controls-group" title="${isSearching ? '搜尋過濾狀態下暫停調整排序' : '調整寶物魚排序'}">
+                    <div class="order-controls-group ${isOwner ? '' : 'admin-only-hidden'}" title="${isSearching ? '搜尋過濾狀態下暫停調整排序' : '調整寶物魚排序'}">
                         <button class="btn-order btn-move-top" data-id="${tf.id}" title="移至最前 (Top)" ${isFirst || isSearching ? 'disabled' : ''}>⏫</button>
                         <button class="btn-order btn-move-up" data-id="${tf.id}" title="上移 (Up)" ${isFirst || isSearching ? 'disabled' : ''}>▲</button>
                         <button class="btn-order btn-move-down" data-id="${tf.id}" title="下移 (Down)" ${isLast || isSearching ? 'disabled' : ''}>▼</button>
                         <button class="btn-order btn-move-bottom" data-id="${tf.id}" title="移至最後 (Bottom)" ${isLast || isSearching ? 'disabled' : ''}>⏬</button>
                     </div>
 
-                    <button class="btn btn-sm btn-secondary btn-edit" data-id="${tf.id}">✏️ 編輯</button>
-                    <button class="btn btn-sm btn-danger btn-delete" data-id="${tf.id}">🗑️ 刪除</button>
+                    ${isOwner ? `
+                        <button class="btn btn-sm btn-secondary btn-edit" data-id="${tf.id}">✏️ 編輯</button>
+                        <button class="btn btn-sm btn-danger btn-delete" data-id="${tf.id}">🗑️ 刪除</button>
+                    ` : ''}
                 </div>
             </div>
 
@@ -791,9 +970,23 @@ function renderCards(list) {
         card.querySelector(".btn-move-down")?.addEventListener("click", () => moveTreasureFish(tf.id, "down"));
         card.querySelector(".btn-move-bottom")?.addEventListener("click", () => moveTreasureFish(tf.id, "bottom"));
 
-        card.querySelector(".btn-edit").addEventListener("click", () => openFormModal(tf.id));
-        card.querySelector(".btn-delete").addEventListener("click", () => deleteTreasureFish(tf.id));
+        card.querySelector(".btn-edit")?.addEventListener("click", () => openFormModal(tf.id));
+        card.querySelector(".btn-delete")?.addEventListener("click", () => deleteTreasureFish(tf.id));
+
         card.querySelector(".btn-edit-fish-locations")?.addEventListener("click", () => openFishLocationModal(tf.fishes[0]?.name || tf.name));
+
+        card.querySelectorAll(".btn-edit-mat-location").forEach(btn => {
+            btn.addEventListener("click", () => {
+                openFishLocationModal(btn.dataset.name);
+            });
+        });
+
+        card.querySelectorAll(".btn-toggle-stamp").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                toggleMissingFish(btn.dataset.name);
+            });
+        });
 
         treasureCardsContainer.appendChild(card);
     });
@@ -1677,11 +1870,13 @@ function renderFriendsView() {
             const fishTagsHTML = Array.from(fishCountMap.entries()).map(([fishName, count]) => {
                 const fishObj = allExistingFishList.find(f => f.name === fishName);
                 const icon = fishObj ? fishObj.icon : "🐠";
-                const countBadge = count > 1 ? `<span style="background:var(--primary); color:#000; font-weight:bold; font-size:0.7rem; padding:1px 5px; border-radius:10px; margin-left:4px;">x${count}</span>` : '';
+                const countBadge = count > 1 ? `<span style="background:var(--primary); color:#000; font-weight:bold; font-size:0.7rem; padding:1px 5px; border-radius:10px; margin-left:auto;">x${count}</span>` : '';
                 return `
-                    <span class="tank-fish-tag">
-                        ${renderAvatarHTML(icon, '🐠')} ${fishName} ${countBadge}
-                    </span>
+                    <div class="tank-fish-tag">
+                        <div class="tank-fish-icon">${renderAvatarHTML(icon, '🐠')}</div>
+                        <span class="tank-fish-name">${fishName}</span>
+                        ${countBadge}
+                    </div>
                 `;
             }).join("");
 
@@ -1693,7 +1888,7 @@ function renderFriendsView() {
                         <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">共 ${totalCount} 隻 (包含 ${fishCountMap.size} 種)</span>
                     </div>
                     <div class="tank-fish-tags">
-                        ${fishTagsHTML || '<span style="color:var(--text-muted); font-size:0.8rem;">(空魚缸)</span>'}
+                        ${fishTagsHTML || '<span style="color:var(--text-muted); font-size:0.8rem; grid-column:1/-1;">(空魚缸)</span>'}
                     </div>
                 </div>
             `;
@@ -1705,19 +1900,19 @@ function renderFriendsView() {
 
         card.innerHTML = `
             <div class="friend-card-header" style="cursor:pointer;" title="點擊展開/收起魚缸列表">
-                <div class="friend-name">
-                    <span class="friend-toggle-icon" style="transition: transform 0.2s ease; display:inline-block; font-size:0.9rem;">▶</span>
-                    <span>👤</span> ${friend.name}
-                    <span class="friend-summary-badge" style="font-size:0.78rem; color:var(--text-muted); font-weight:normal; margin-left:4px;">
-                        (${totalTanks} 個魚缸 / 共 ${totalFishCount} 隻魚)
-                    </span>
+                <div class="friend-name" style="flex:1; min-width:0;">
+                    <span class="friend-toggle-icon" style="transition: transform 0.2s ease; display:inline-block; font-size:0.85rem;">▶</span>
+                    <span style="flex-shrink:0;">👤</span> 
+                    <span class="friend-name-text" style="font-weight:700; flex-shrink:0; cursor:copy;" title="點擊複製好友名稱">${friend.name}</span>
+                    <span class="copy-hint-toast" style="font-size:0.75rem; color:var(--primary); font-weight:normal; display:none; margin-left:4px;">📋 已複製!</span>
+                    <span class="friend-summary-badge">(${totalTanks}缸/${totalFishCount}隻)</span>
                 </div>
-                <div style="display:flex; gap:6px;" onclick="event.stopPropagation();">
-                    <button class="btn btn-sm btn-secondary btn-edit-friend" data-id="${friend.id}">✏️ 編輯</button>
-                    <button class="btn btn-sm btn-danger btn-delete-friend" data-id="${friend.id}">🗑️</button>
+                <div style="display:flex; gap:6px; flex-shrink:0;" onclick="event.stopPropagation();">
+                    <button class="btn btn-sm btn-secondary btn-edit-friend" data-id="${friend.id}" style="padding:2px 8px; font-size:0.8rem;">✏️ 編輯</button>
+                    <button class="btn btn-sm btn-danger btn-delete-friend" data-id="${friend.id}" style="padding:2px 8px; font-size:0.8rem;">🗑️</button>
                 </div>
             </div>
-            <div class="friend-tanks-collapsible" style="display:none; flex-direction:column; gap:8px; margin-top:8px;">
+            <div class="friend-tanks-collapsible" style="display:none; flex-direction:column; gap:8px; margin-top:6px; padding-top:8px; border-top:1px dashed rgba(255,255,255,0.12);">
                 ${tanksHTML || '<p style="color:var(--text-muted); font-size:0.85rem;">尚無魚缸紀錄</p>'}
             </div>
         `;
@@ -1725,15 +1920,38 @@ function renderFriendsView() {
         const headerEl = card.querySelector(".friend-card-header");
         const bodyEl = card.querySelector(".friend-tanks-collapsible");
         const iconEl = card.querySelector(".friend-toggle-icon");
+        const nameTextEl = card.querySelector(".friend-name-text");
+        const copyToastEl = card.querySelector(".copy-hint-toast");
+
+        // Copy name to clipboard on name text click
+        nameTextEl.addEventListener("click", (e) => {
+            e.stopPropagation(); // prevent toggling accordion
+            navigator.clipboard.writeText(friend.name).then(() => {
+                copyToastEl.style.display = "inline";
+                setTimeout(() => {
+                    copyToastEl.style.display = "none";
+                }, 1500);
+            }).catch(err => {
+                console.error("Copy failed", err);
+            });
+        });
 
         headerEl.addEventListener("click", () => {
-            const isHidden = bodyEl.style.display === "none";
-            if (isHidden) {
+            const isCurrentlyExpanded = card.classList.contains("is-expanded");
+
+            // Close all other expanded cards first (Accordion mode)
+            container.querySelectorAll(".friend-card").forEach(c => {
+                c.classList.remove("is-expanded");
+                const b = c.querySelector(".friend-tanks-collapsible");
+                const i = c.querySelector(".friend-toggle-icon");
+                if (b) b.style.display = "none";
+                if (i) i.style.transform = "rotate(0deg)";
+            });
+
+            if (!isCurrentlyExpanded) {
+                card.classList.add("is-expanded");
                 bodyEl.style.display = "flex";
                 iconEl.style.transform = "rotate(90deg)";
-            } else {
-                bodyEl.style.display = "none";
-                iconEl.style.transform = "rotate(0deg)";
             }
         });
 
@@ -1782,11 +2000,6 @@ function addTankRow(tankNo = null, initialFishes = []) {
     row.className = "friend-tank-row";
     row.style.cssText = "background:rgba(0,0,0,0.25); padding:10px; border-radius:var(--radius-sm); border:1px solid var(--border-color); display:flex; flex-direction:column; gap:8px;";
 
-    const allFishOptions = getAllExistingFishOptions();
-    const optionsHTML = allFishOptions.map(f => {
-        return `<option value="${f.name}"></option>`;
-    }).join("");
-
     row.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-weight:600; color:var(--primary); font-size:0.9rem;">第 <input type="number" class="tank-no-input" value="${actualTankNo}" style="width:45px; padding:2px 4px; background:var(--bg-dark); border:1px solid var(--border-color); color:var(--text-main); border-radius:4px; text-align:center;"> 缸</span>
@@ -1801,11 +2014,15 @@ function addTankRow(tankNo = null, initialFishes = []) {
     const fishSelectContainer = row.querySelector(".tank-fish-select-container");
     const addFishBtn = row.querySelector(".btn-add-fish-to-tank");
 
-    const addFishSelectRow = (selectedFishName = "") => {
+    const addFishSelectRow = (selectedFishName = "", qty = 1) => {
         const selectRow = document.createElement("div");
         selectRow.style.cssText = "display:flex; gap:6px; align-items:center; position:relative;";
         selectRow.innerHTML = `
             <input type="text" class="tank-fish-select" value="${selectedFishName}" placeholder="選擇或輸入魚隻名稱..." style="flex:1; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px;">
+            <div style="display:flex; align-items:center; gap:2px; flex-shrink:0;">
+                <span style="font-size:0.8rem; color:var(--text-muted);">x</span>
+                <input type="number" class="tank-fish-qty-input" min="1" max="999" value="${qty}" style="width:50px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px; text-align:center;" title="數量">
+            </div>
             <button type="button" class="btn btn-sm btn-danger btn-remove-fish-select" style="padding:2px 6px;">✕</button>
             <div class="mat-suggestions-popup"></div>
         `;
@@ -1858,9 +2075,24 @@ function addTankRow(tankNo = null, initialFishes = []) {
         fishSelectContainer.appendChild(selectRow);
     };
 
-    initialFishes.forEach(fName => addFishSelectRow(fName));
+    // Process initialFishes (supports both array of strings or array of objects/counts)
+    if (Array.isArray(initialFishes)) {
+        // Group string array into name and qty
+        const countMap = new Map();
+        initialFishes.forEach(item => {
+            if (typeof item === 'string') {
+                countMap.set(item, (countMap.get(item) || 0) + 1);
+            } else if (typeof item === 'object' && item.name) {
+                countMap.set(item.name, (countMap.get(item.name) || 0) + (item.qty || 1));
+            }
+        });
 
-    addFishBtn.addEventListener("click", () => addFishSelectRow());
+        countMap.forEach((qty, fName) => {
+            addFishSelectRow(fName, qty);
+        });
+    }
+
+    addFishBtn.addEventListener("click", () => addFishSelectRow("", 1));
     row.querySelector(".btn-remove-tank").addEventListener("click", () => row.remove());
 
     friendTanksContainer.appendChild(row);
@@ -1874,16 +2106,41 @@ function handleFriendFormSubmit(e) {
 
     const tankRows = friendTanksContainer.querySelectorAll(".friend-tank-row");
     const tanks = [];
+    let hasDuplicateError = false;
 
     tankRows.forEach(row => {
         const tankNo = parseInt(row.querySelector(".tank-no-input").value, 10) || (tanks.length + 1);
-        const selects = row.querySelectorAll(".tank-fish-select");
+        const selectRows = row.querySelectorAll(".tank-fish-select-container > div");
         const fishes = [];
-        selects.forEach(s => {
-            if (s.value) fishes.push(s.value);
+        const seenFishNames = new Set();
+        let duplicateFound = null;
+
+        selectRows.forEach(sRow => {
+            const fishName = sRow.querySelector(".tank-fish-select")?.value.trim();
+            const qty = parseInt(sRow.querySelector(".tank-fish-qty-input")?.value, 10) || 1;
+            if (fishName) {
+                if (seenFishNames.has(fishName)) {
+                    duplicateFound = fishName;
+                } else {
+                    seenFishNames.add(fishName);
+                }
+                // Expand fishes array based on qty to maintain full backward compatibility with system links
+                for (let i = 0; i < qty; i++) {
+                    fishes.push(fishName);
+                }
+            }
         });
+
+        if (duplicateFound) {
+            alert(`【第 ${tankNo} 缸】中存在重複的魚隻：【${duplicateFound}】！\n請勿在同一缸重複新增相同魚隻，若需增加數量請直接修改「x數量」。`);
+            hasDuplicateError = true;
+            return;
+        }
+
         tanks.push({ tankNo, fishes });
     });
+
+    if (hasDuplicateError) return;
 
     if (id) {
         const idx = friendsList.findIndex(f => f.id === id);
@@ -1972,13 +2229,26 @@ function openFishLocationModal(fishName) {
     document.getElementById("fish-location-modal-title").textContent = `📍 管理【${fishName}】的好友摸魚點`;
     fishLocationRowsContainer.innerHTML = "";
 
-    // Find current locations for this fish
-    const targetTf = treasureFishList.find(tf => tf.fishes.some(f => f.name === fishName) || tf.name === fishName);
-    const locations = targetTf ? (targetTf.locations || []) : [];
+    // Count locations and quantities directly from friendsList for accuracy
+    const locationMap = new Map(); // key: friendName__tankNo => count
 
-    locations.forEach(loc => addFishLocationRow(loc.friend, loc.tank));
+    friendsList.forEach(fr => {
+        (fr.tanks || []).forEach(tank => {
+            let count = 0;
+            (tank.fishes || []).forEach(f => {
+                if (f === fishName) count++;
+            });
+            if (count > 0) {
+                const key = `${fr.name}__${tank.tankNo}`;
+                locationMap.set(key, { friend: fr.name, tank: tank.tankNo, qty: count });
+            }
+        });
+    });
+
+    const locations = Array.from(locationMap.values());
+    locations.forEach(loc => addFishLocationRow(loc.friend, loc.tank, loc.qty));
     if (locations.length === 0) {
-        addFishLocationRow("", 1);
+        addFishLocationRow("", 1, 1);
     }
 
     modalFishLocation.classList.add("active");
@@ -1988,8 +2258,9 @@ function closeFishLocationModal() {
     modalFishLocation.classList.remove("active");
 }
 
-function addFishLocationRow(friendName = "", tankNo = 1) {
+function addFishLocationRow(friendName = "", tankNo = 1, qty = 1) {
     const row = document.createElement("div");
+    row.className = "fish-loc-item-row";
     row.style.cssText = "display:flex; gap:8px; align-items:center; background:rgba(0,0,0,0.2); padding:8px; border-radius:6px; border:1px solid var(--border-color);";
 
     let friendOptionsHTML = friendsList.map(fr => `<option value="${fr.name}">${fr.name}</option>`).join("");
@@ -2003,8 +2274,13 @@ function addFishLocationRow(friendName = "", tankNo = 1) {
         </div>
         <div style="display:flex; align-items:center; gap:4px;">
             <span style="font-size:0.85rem; color:var(--text-muted);">第</span>
-            <input type="number" class="loc-tank-input" min="1" max="99" value="${tankNo}" style="width:50px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px; text-align:center;">
+            <input type="number" class="loc-tank-input" min="1" max="99" value="${tankNo}" style="width:45px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px; text-align:center;">
             <span style="font-size:0.85rem; color:var(--text-muted);">缸</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:2px;">
+            <span style="font-size:0.85rem; color:var(--text-muted);">x</span>
+            <input type="number" class="loc-qty-input" min="1" max="999" value="${qty}" style="width:50px; padding:6px; background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border-color); border-radius:4px; text-align:center;" title="養殖數量">
+            <span style="font-size:0.85rem; color:var(--text-muted);">隻</span>
         </div>
         <button type="button" class="btn btn-sm btn-danger btn-remove-loc-row" style="padding:6px 10px;">✕</button>
     `;
@@ -2015,26 +2291,45 @@ function addFishLocationRow(friendName = "", tankNo = 1) {
 
 function saveFishLocationChanges() {
     const fishName = document.getElementById("fish-location-target-name").value;
-    const rows = fishLocationRowsContainer.querySelectorAll("div[style*='display:flex']");
+    const rows = fishLocationRowsContainer.querySelectorAll(".fish-loc-item-row");
 
     const newLocations = [];
+    const seenLocs = new Set();
+    let duplicateLocError = null;
+
     rows.forEach(r => {
         const friendInput = r.querySelector(".loc-friend-input");
         const tankInput = r.querySelector(".loc-tank-input");
+        const qtyInput = r.querySelector(".loc-qty-input");
         if (friendInput && friendInput.value.trim()) {
             const friend = friendInput.value.trim();
             const tank = parseInt(tankInput.value, 10) || 1;
-            newLocations.push({ friend, tank });
+            const qty = parseInt(qtyInput.value, 10) || 1;
+            const key = `${friend}__${tank}`;
+            if (seenLocs.has(key)) {
+                duplicateLocError = `【${friend}】的【第 ${tank} 缸】`;
+            } else {
+                seenLocs.add(key);
+            }
+            newLocations.push({ friend, tank, qty });
         }
     });
 
-    // Update target fish locations
-    const targetTf = treasureFishList.find(tf => tf.fishes.some(f => f.name === fishName) || tf.name === fishName);
-    if (targetTf) {
-        targetTf.locations = newLocations;
+    if (duplicateLocError) {
+        alert(`設定地點失敗：在 ${duplicateLocError} 設定了重複的欄位！\n相同魚缸若要修改數量，請直接更改該列的數量數字。`);
+        return;
     }
 
-    // Sync to friendsList
+    // 1. First, remove fishName from all tanks in friendsList for clean sync
+    friendsList.forEach(fr => {
+        (fr.tanks || []).forEach(tank => {
+            if (tank.fishes) {
+                tank.fishes = tank.fishes.filter(f => f !== fishName);
+            }
+        });
+    });
+
+    // 2. Add fishName to selected friends & tanks in friendsList with qty
     newLocations.forEach(loc => {
         let fr = friendsList.find(f => f.name === loc.friend);
         if (!fr) {
@@ -2046,10 +2341,13 @@ function saveFishLocationChanges() {
             tank = { tankNo: loc.tank, fishes: [] };
             fr.tanks.push(tank);
         }
-        if (!tank.fishes.includes(fishName)) {
+        for (let i = 0; i < loc.qty; i++) {
             tank.fishes.push(fishName);
         }
     });
+
+    // 3. Bi-directionally sync to all target fishes and material fishes locations in treasureFishList
+    syncFriendsToTreasureFishLocations();
 
     saveFriendsData();
     saveData();
@@ -2073,4 +2371,256 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-add-location-row")?.addEventListener("click", () => addFishLocationRow());
     document.getElementById("btn-save-fish-location")?.addEventListener("click", saveFishLocationChanges);
 });
+
+// Render Missing Fishes View (Clean Table View)
+function renderMissingView() {
+    const missingTableBody = document.getElementById("missing-table-body");
+    const missingCountBadge = document.getElementById("missing-count");
+    if (!missingTableBody) return;
+
+    missingTableBody.innerHTML = "";
+
+    if (missingFishSet.size === 0) {
+        missingCountBadge.textContent = "0 隻缺少";
+        missingTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 50px 20px; color: var(--text-muted);">
+                    <p style="font-size: 1.2rem; font-weight: 600; color: var(--text-main); margin-bottom: 6px;">目前沒有標記任何缺少的魚 🎉</p>
+                    <p style="font-size: 0.88rem;">在「寶物魚圖鑑」中點擊任何魚或材料旁邊的『+ 缺』按鈕，即可將其加入此清單！</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    // Collect all missing items: Target fishes & Material fishes
+    const missingItemsList = [];
+
+    treasureFishList.forEach(tf => {
+        const allTargetNames = tf.fishes.map(x => x.name);
+
+        // Check target fishes (Target fishes do not add versatility recipe count)
+        tf.fishes.forEach(f => {
+            if (missingFishSet.has(f.name)) {
+                missingItemsList.push({
+                    type: "target",
+                    name: f.name,
+                    icon: f.icon,
+                    detailText: `✨ 合成解鎖：【${f.rewardTreasure}】`,
+                    parentRecipeName: `-`,
+                    locations: tf.locations || [],
+                    qtyStr: `<span style="color:#ffd700; font-weight:bold;">1 隻 (目標魚)</span>`,
+                    isTargetFish: true
+                });
+            }
+        });
+
+        // Check material fishes
+        tf.materials.forEach(m => {
+            if (missingFishSet.has(m.name)) {
+                const recipeLabel = `合成【${allTargetNames.join(" + ")}】`;
+
+                missingItemsList.push({
+                    type: "material",
+                    name: m.name,
+                    icon: m.icon,
+                    detailText: `寶物：【${m.treasure}】`,
+                    parentRecipeName: recipeLabel,
+                    locations: m.locations || [],
+                    qtyStr: `<span style="color:var(--primary); font-weight:bold;">x${m.qty} (材料魚)</span>`,
+                    isTargetFish: false
+                });
+            }
+        });
+    });
+
+    // Deduplicate by name if same material appears in multiple recipes, merging locations and counting appearances
+    const mergedMissingMap = new Map();
+    missingItemsList.forEach(item => {
+        if (!mergedMissingMap.has(item.name)) {
+            mergedMissingMap.set(item.name, {
+                ...item,
+                parentRecipes: item.parentRecipeName !== '-' ? [item.parentRecipeName] : [],
+                allLocations: [...(item.locations || [])],
+                recipeCount: item.parentRecipeName !== '-' ? 1 : 0
+            });
+        } else {
+            const existing = mergedMissingMap.get(item.name);
+            // If item has a material role (is used as material in a recipe), make sure type shows material or both
+            if (item.type === "material") {
+                existing.type = "material";
+            }
+            if (item.parentRecipeName !== '-' && !existing.parentRecipes.includes(item.parentRecipeName)) {
+                existing.parentRecipes.push(item.parentRecipeName);
+                existing.recipeCount += 1;
+            }
+            (item.locations || []).forEach(loc => {
+                if (!existing.allLocations.some(l => l.friend === loc.friend && l.tank === loc.tank)) {
+                    existing.allLocations.push(loc);
+                }
+            });
+        }
+    });
+
+    // Helper to get normalized family key (e.g., "瞌睡蝸牛" from "桃粉瞌睡蝸牛" / "樹棕瞌睡蝸牛")
+    function getFishFamilyKey(name) {
+        if (!name) return "";
+        // Common suffixes/keywords for fish families
+        const keywords = ["瞌睡蝸牛", "斑馬燈", "孔雀魚", "神仙魚", "金魚", "熊貓金魚", "泡螺", "雪橇犬", "鼠寶寶", "蝴蝶魚", "海蛾", "鱂魚", "劍魚", "裙魚", "小鯉"];
+        for (const kw of keywords) {
+            if (name.includes(kw)) return kw;
+        }
+        // Fallback: use last 2 characters as family key
+        return name.length >= 2 ? name.slice(-2) : name;
+    }
+
+    // Sort by recipeCount descending, then secondary sort by family group & name
+    const finalMissingList = Array.from(mergedMissingMap.values()).sort((a, b) => {
+        if (b.recipeCount !== a.recipeCount) {
+            return b.recipeCount - a.recipeCount;
+        }
+        // Secondary sort: group by fish family key (e.g. all 瞌睡蝸牛 together)
+        const famA = getFishFamilyKey(a.name);
+        const famB = getFishFamilyKey(b.name);
+        if (famA !== famB) {
+            return famA.localeCompare(famB, "zh-Hant");
+        }
+        // Tertiary sort: alphabetically by full name
+        return a.name.localeCompare(b.name, "zh-Hant");
+    });
+    missingCountBadge.textContent = `${finalMissingList.length} 種缺少`;
+
+    finalMissingList.forEach((item, index) => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid rgba(255, 255, 255, 0.08)";
+
+        // High demand badge if appears in multiple recipes
+        const isTopDemand = item.recipeCount > 1;
+        const topDemandBadge = isTopDemand 
+            ? `<span style="font-size:0.68rem; background:linear-gradient(135deg, #f59e0b, #ef4444); color:#fff; padding:1px 6px; border-radius:10px; font-weight:bold; box-shadow:0 0 6px rgba(245,158,11,0.5);" title="泛用性極高！共被 ${item.recipeCount} 組寶物魚配方需求">🔥 高需求 (使用於 ${item.recipeCount} 組配方)</span>` 
+            : '';
+
+        // Determine precise fish badge: Is it a top Target Fish? Does it also serve as Material?
+        const isMasterTreasureFish = treasureFishList.some(tf => tf.fishes.some(f => f.name === item.name));
+        let typeBadgeHTML = "";
+
+        if (isMasterTreasureFish && item.recipeCount > 0) {
+            typeBadgeHTML = `<span style="font-size:0.68rem; background:linear-gradient(135deg, #ef4444, #8b5cf6); color:#fff; padding:1px 6px; border-radius:10px; font-weight:600; white-space:nowrap;">👑 寶物魚 (亦為材料)</span>`;
+        } else if (isMasterTreasureFish) {
+            typeBadgeHTML = `<span style="font-size:0.68rem; background:#ef4444; color:#fff; padding:1px 6px; border-radius:10px; font-weight:600; white-space:nowrap;">👑 缺寶物魚</span>`;
+        } else {
+            typeBadgeHTML = `<span style="font-size:0.68rem; background:rgba(0,210,255,0.2); color:var(--primary); padding:1px 6px; border-radius:10px; font-weight:600; white-space:nowrap;">🐟 缺材料魚</span>`;
+        }
+
+        // Group location chips
+        const mFriendMap = new Map();
+        (item.allLocations || []).forEach(loc => {
+            if (!mFriendMap.has(loc.friend)) mFriendMap.set(loc.friend, []);
+            if (!mFriendMap.get(loc.friend).includes(loc.tank)) mFriendMap.get(loc.friend).push(loc.tank);
+        });
+
+        const locationChipsStr = Array.from(mFriendMap.entries()).map(([fr, tanks]) => {
+            tanks.sort((a, b) => a - b);
+            return `<span class="location-chip btn-copy-friend" data-friend="${fr}" style="font-size:0.75rem; background:rgba(0, 210, 255, 0.12); border-color:var(--primary); cursor:pointer; padding:3px 8px; margin-right:4px; margin-bottom:4px; display:inline-flex; align-items:center; gap:4px;" title="點擊複製姓名【${fr}】">📍 ${fr} (缸${tanks.join(",")}) 📋</span>`;
+        }).join("");
+
+        tr.innerHTML = `
+            <td style="padding: 12px 14px; vertical-align: middle;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div class="tf-avatar" style="width:42px; height:42px; font-size:1.4rem; flex-shrink:0;">
+                        ${renderAvatarHTML(item.icon, isMasterTreasureFish ? '👑' : '🐟')}
+                    </div>
+                    <div style="min-width:0;">
+                        <div style="font-weight:700; font-size:0.98rem; color:var(--text-main); line-height:1.3; white-space:nowrap;">${item.name}</div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-top:4px; flex-wrap:wrap;">
+                            ${typeBadgeHTML}
+                            ${topDemandBadge}
+                        </div>
+                    </div>
+                </div>
+            </td>
+            <td style="padding: 12px 14px; vertical-align: middle;">
+                <div style="font-size:0.85rem; color:#ffd700;">${item.detailText}</div>
+                <div style="font-size:0.78rem; margin-top:2px;">${item.qtyStr}</div>
+            </td>
+            <td style="padding: 12px 14px; vertical-align: middle; font-size:0.85rem; color:var(--text-muted);">
+                <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    ${item.parentRecipes.map(r => `<span style="background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; border:1px solid rgba(255,255,255,0.1); display:inline-block;">${r}</span>`).join("")}
+                </div>
+            </td>
+            <td style="padding: 12px 14px; vertical-align: middle;">
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
+                    ${locationChipsStr || '<span style="color:var(--text-muted); font-size:0.78rem;">尚未設定地點</span>'}
+                    <button class="location-chip location-chip-add btn-edit-missing-loc" data-name="${item.name}" style="font-size:0.72rem; padding:2px 8px;">
+                        ➕ 設定地點
+                    </button>
+                </div>
+            </td>
+            <td style="padding: 12px 14px; vertical-align: middle; text-align: center;">
+                <button class="btn-remove-missing btn-toggle-stamp active" data-name="${item.name}" title="解除標記" style="font-size:0.72rem;">
+                    ✓ 取消缺
+                </button>
+            </td>
+        `;
+
+        tr.querySelector(".btn-remove-missing").addEventListener("click", () => {
+            toggleMissingFish(item.name);
+        });
+
+        tr.querySelector(".btn-edit-missing-loc").addEventListener("click", () => {
+            openFishLocationModal(item.name);
+        });
+
+        tr.querySelectorAll(".btn-copy-friend").forEach(chip => {
+            chip.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const friendName = chip.dataset.friend;
+                if (!friendName) return;
+                navigator.clipboard.writeText(friendName).then(() => {
+                    showToast(`📋 已成功複製好友名稱：【${friendName}】`);
+                }).catch(err => {
+                    console.error("Copy failed", err);
+                });
+            });
+        });
+
+        missingTableBody.appendChild(tr);
+    });
+}
+
+// Toast notification helper
+function showToast(msg) {
+    let toast = document.getElementById("toast-notification");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "toast-notification";
+        toast.style.cssText = `
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: rgba(0, 210, 255, 0.95);
+            color: #000;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,210,255,0.4);
+            z-index: 9999;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-size: 0.9rem;
+            pointer-events: none;
+            opacity: 0;
+        `;
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.transform = "translateX(-50%) translateY(0)";
+    toast.style.opacity = "1";
+
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+        toast.style.transform = "translateX(-50%) translateY(100px)";
+        toast.style.opacity = "0";
+    }, 2200);
+}
 
