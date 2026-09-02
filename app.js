@@ -238,10 +238,23 @@ function setupUserSync() {
             loadFriendsFromLocal();
             if (friendsList.length > 0) {
                 saveFriendsData();
+            } else {
+                // Legacy Root Node Fallback Migration
+                db.ref('friendsList').once('value').then((rootSnap) => {
+                    const rootData = rootSnap.val();
+                    if (rootData) {
+                        friendsList = Array.isArray(rootData) ? rootData : Object.values(rootData);
+                        if (friendsList.length > 0) {
+                            saveFriendsData();
+                            render();
+                        }
+                    }
+                }).catch(err => console.error("Legacy root friends list migration failed", err));
             }
         }
         render();
     });
+
 
     // 2. User Missing Stamps Listener
     if (userMissingDbRef) {

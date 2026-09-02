@@ -4,6 +4,10 @@
       ".read": true,
       ".write": "auth != null"
     },
+    "friendsList": {
+      ".read": true,
+      ".write": "auth != null"
+    },
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
