@@ -193,7 +193,17 @@ function setupAuth() {
             userFriendsDbRef = db.ref(`users/${user.uid}/friendsList`);
             userMissingDbRef = db.ref(`users/${user.uid}/missingFishSet`);
             
+            // Record User Profile in Firebase
+            db.ref(`users/${user.uid}/profile`).set({
+                email: user.email,
+                name: user.displayName || user.email,
+                lastLogin: new Date().toISOString()
+            }).catch(err => {
+                console.error("寫入個人資料失敗，請檢查 Firebase Console 的 Rules 權限設定:", err);
+            });
+
             setupUserSync();
+
         } else {
             isOwner = false;
             if (btnLogin) btnLogin.style.display = "inline-flex";
